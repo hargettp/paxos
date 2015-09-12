@@ -1,6 +1,4 @@
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -15,11 +13,14 @@
 --
 -----------------------------------------------------------------------------
 
-module Control.Consensus (
+module Control.Consensus.Paxos (
+
+  module Control.Consensus.Paxos.Types
 
 ) where
 
 -- local imports
+import Control.Consensus.Paxos.Types
 
 -- external imports
 
@@ -35,114 +36,16 @@ import Network.RPC
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data Paxos d = Paxos {
-  paxosEndpoint :: Endpoint,
-  paxosName :: Name,
-  paxosMembers :: M.Map Name Member,
-  paxosTimeout :: Integer,
-  instanceId :: Integer,
-  lastProposalId :: Integer,
-  nextProposalId :: Integer,
-  lastVote :: Maybe (Vote d)
-}
-
-data BallotId = BallotId {
-  ballotNumber :: Integer,
-  proposerId :: Integer
-} deriving (Eq,Ord,Generic)
-
-instance Serialize BallotId
-
-data Member = Member {
-  memberPriority :: Integer
-  }
-
-data Vote d = Vote {
-  ballotId :: BallotId,
-  voteDecree :: d
-  }
-  | Assent
-  deriving (Generic,Eq)
-
-instance (Decree d) => Serialize (Vote d)
-
-instance (Decree d) => Ord (Vote d) where
-  Assent <= Assent = True
-  Assent <= _ = True
-  _ <= Assent = False
-  a <= b = (ballotNumber $ ballotId a) <= (ballotNumber $ ballotId b)
-
 {-|
-Eq. to NextBallot in basic protocol
+Lead one round of voting, with one of 3 possible outcomes:
+
+* The proposed decree
+* Another decree proposed by another Member
+* No decree chosen
+
 -}
-data Prepare = Prepare {
-  prepareInstanceId :: Integer,
-  tentativeProposalId :: Integer
-} deriving (Generic)
-
-instance Serialize Prepare
-
-class (Eq d,Serialize d) => Decree d
-
-data Promise d = Promise {
-  } |
-  Decline {
-    declineInstanceId :: Integer,
-    declineProposalId :: Integer
-  }
-
-newPrepare :: Paxos d -> (Paxos d, Prepare)
-newPrepare p =
-  let nextProposalId = 1 + lastProposalId p
-      prepare = Prepare {
-        prepareInstanceId = instanceId p,
-        tentativeProposalId = nextProposalId
-        }
-      paxos = p {
-        lastProposalId = nextProposalId
-        }
-  in (paxos,prepare)
-
-{-|
-Eq. BeginBallot in basic protocolx
--}
-data Proposal d = (Decree d) => Proposal {
-  proposalInstanceId :: Integer,
-  proposalId :: Integer,
-  proposedDecree :: d
-}
-
-instance (Decree d) => Serialize (Proposal d) where
-  put p = do
-    put $ proposalInstanceId p
-    put $ proposalId p
-    put $ proposedDecree p
-
-  get = do
-    _proposalInstanceId <- get
-    _proposalId <- get
-    _proposedDecree <- get
-    return Proposal {
-      proposalInstanceId = _proposalInstanceId,
-      proposalId = _proposalId,
-      proposedDecree = _proposedDecree
-    }
-
-newProposal :: (Decree d) => Paxos d -> d -> (Paxos d, Proposal d)
-newProposal p d =
-  let nextProposalId = 1 + lastProposalId p
-      proposal = Proposal {
-        proposalInstanceId = instanceId p,
-        proposalId = nextProposalId,
-        proposedDecree = d
-      }
-      paxos = p {
-        lastProposalId = nextProposalId
-      }
-  in (paxos,proposal)
-
-runBasicPaxos :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
-runBasicPaxos p d = do
+leadBasicPaxos :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
+leadBasicPaxos p d = do
   (prepared,votes) <- preparation p d
   let maybeChosenDecree = chooseDecree p d votes
   case maybeChosenDecree of
@@ -181,19 +84,6 @@ chooseDecree p decree votes =
 
 proposition :: (Decree d) => Paxos d -> d -> IO (Paxos d, Bool)
 proposition p _ = return (p,True)
--- proposition p d = do
---   let nextProposalId = 1 + lastProposalId p
---       prop = Proposal {
---         proposalInstanceId = instanceId p,
---         proposalId = nextProposalId,
---         proposedDecree = d
---       }
---       paxos = p {
---         lastProposalId = nextProposalId
---       }
---   votes <- propose p prop
---   let actualVotes = filter isJust votes
-
 
 acceptance :: (Decree d) => Paxos d -> d -> IO (Paxos d)
 acceptance p _ = return p
@@ -203,10 +93,10 @@ acceptance p _ = return p
 --
 
 prepare :: (Decree d) => Paxos d -> Prepare -> IO (M.Map Name (Maybe (Vote d)))
-prepare p prep = pcall p "prepare" prep
+prepare p = pcall p "prepare"
 
 propose :: (Decree d) => Paxos d -> Proposal d -> IO (M.Map Name (Maybe Bool))
-propose p proposal = pcall p "propose" proposal
+propose p = pcall p "propose"
 
 --
 -- Utility
@@ -231,7 +121,7 @@ pcall p method args = do
   return $ decodeResponses responses
 
 decodeResponses :: (Serialize r) => M.Map Name (Maybe Message)  -> M.Map Name (Maybe r)
-decodeResponses responses = M.map decodeResponse responses
+decodeResponses = M.map decodeResponse
   where
     decodeResponse maybeMsg = case maybeMsg of
       Nothing -> Nothing
