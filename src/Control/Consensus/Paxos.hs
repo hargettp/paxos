@@ -15,6 +15,7 @@
 
 module Control.Consensus.Paxos (
 
+  leadBasicPaxos,
   leadBasicPaxosRound,
 
   module Control.Consensus.Paxos.Types
@@ -38,37 +39,49 @@ import Network.RPC
 --------------------------------------------------------------------------------
 
 {-|
+Continue inititiating rounds of Paxos until the decree is finall accepted.
+
+This will guarantee the decree is eventually accepted, provider the caller doesn't crash.
+-}
+leadBasicPaxos :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
+leadBasicPaxos p d = do
+  let newP = p {
+    lastProposalId = 1 + lastProposalId p
+  }
+  maybeDecree <- leadBasicPaxosRound newP d
+  case maybeDecree of
+    -- if this decree is accepted, we are done
+    Just c | c == d -> return (newP,Just d)
+    -- if the response is Nothing or another decree, keep trying
+    _ -> leadBasicPaxos newP d
+
+{-|
 Lead one round of voting, with one of 3 possible outcomes:
 
-* The proposed decree
-* Another decree proposed by another Member
-* No decree chosen
+* The proposed decree is accepted
+* Another decree proposed by another `Member` is accepted
+* No decree is accepted
 
 -}
-leadBasicPaxosRound :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
+leadBasicPaxosRound :: (Decree d) => Paxos d -> d -> IO (Maybe d)
 leadBasicPaxosRound p d = do
-  (prepared,votes) <- preparation p
-  let maybeChosenDecree = chooseDecree prepared d votes
+  votes <- preparation p
+  let maybeChosenDecree = chooseDecree p d votes
   case maybeChosenDecree of
-    Nothing -> return (prepared,Nothing)
+    Nothing -> return Nothing
     Just chosenDecree -> do
-      (proposed, promised) <- proposition prepared
+      promised <- proposition p
       if promised
-        then acceptance proposed chosenDecree
-        else return (proposed,Nothing)
+        then acceptance p chosenDecree
+        else return Nothing
 
-preparation :: (Decree d) => Paxos d -> IO (Paxos d,M.Map Name (Maybe (Vote d)))
+preparation :: (Decree d) => Paxos d -> IO (M.Map Name (Maybe (Vote d)))
 preparation p = do
-  let nextProposalId = 1 + lastProposalId p
-      prep = Prepare {
+  let prep = Prepare {
         prepareInstanceId = instanceId p,
-        tentativeProposalId = nextProposalId
+        tentativeProposalId = lastProposalId p
         }
-      prepared = p {
-        lastProposalId = nextProposalId
-        }
-  votes <- prepare prepared prep
-  return (p,votes)
+  prepare p prep
 
 chooseDecree :: (Decree d) => Paxos d -> d -> M.Map Name (Maybe (Vote d)) -> Maybe d
 chooseDecree p decree votes =
@@ -81,21 +94,21 @@ chooseDecree p decree votes =
       Just Assent -> Just decree
       Just vote -> Just $ voteDecree vote
 
-proposition :: (Decree d) => Paxos d -> IO (Paxos d, Bool)
+proposition :: (Decree d) => Paxos d -> IO Bool
 proposition p = do
   let proposal = Proposal {
     proposalInstanceId = instanceId p,
     proposalId = lastProposalId p
   }
   responses <- propose p proposal
-  return (p,isMajority p responses id)
+  return $ isMajority p responses id
 
-acceptance :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
+acceptance :: (Decree d) => Paxos d -> d -> IO (Maybe d)
 acceptance p d = do
   responses <- accept p d
   if isMajority p responses id
-    then return (p,Just d)
-    else return (p,Nothing)
+    then return $ Just d
+    else return Nothing
 
 --
 -- Actual protocol
