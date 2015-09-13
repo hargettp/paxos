@@ -108,24 +108,9 @@ data Promise d = Promise {
 {-|
 Eq. BeginBallot in basic protocolx
 -}
-data Proposal d = (Decree d) => Proposal {
+data Proposal = Proposal {
   proposalInstanceId :: Integer,
-  proposalId :: Integer,
-  proposedDecree :: d
-}
+  proposalId :: Integer
+} deriving (Generic)
 
-instance (Decree d) => Serialize (Proposal d) where
-  put p = do
-    put $ proposalInstanceId p
-    put $ proposalId p
-    put $ proposedDecree p
-
-  get = do
-    _proposalInstanceId <- get
-    _proposalId <- get
-    _proposedDecree <- get
-    return Proposal {
-      proposalInstanceId = _proposalInstanceId,
-      proposalId = _proposalId,
-      proposedDecree = _proposedDecree
-    }
+instance Serialize Proposal

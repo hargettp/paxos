@@ -15,9 +15,12 @@
 
 module Control.Consensus.Paxos (
 
+  leadBasicPaxosRound,
+
   module Control.Consensus.Paxos.Types
 
 ) where
+
 
 -- local imports
 import Control.Consensus.Paxos.Types
@@ -27,8 +30,6 @@ import Control.Consensus.Paxos.Types
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Serialize
-
-import GHC.Generics
 
 import Network.Endpoints
 import Network.RPC
@@ -44,36 +45,34 @@ Lead one round of voting, with one of 3 possible outcomes:
 * No decree chosen
 
 -}
-leadBasicPaxos :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
-leadBasicPaxos p d = do
-  (prepared,votes) <- preparation p d
-  let maybeChosenDecree = chooseDecree p d votes
+leadBasicPaxosRound :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
+leadBasicPaxosRound p d = do
+  (prepared,votes) <- preparation p
+  let maybeChosenDecree = chooseDecree prepared d votes
   case maybeChosenDecree of
     Nothing -> return (prepared,Nothing)
     Just chosenDecree -> do
-      (proposed, promised) <- proposition prepared chosenDecree
+      (proposed, promised) <- proposition prepared
       if promised
-        then do
-          accepted <- acceptance proposed chosenDecree
-          return (accepted, Just chosenDecree)
+        then acceptance proposed chosenDecree
         else return (proposed,Nothing)
 
-preparation :: (Decree d) => Paxos d -> d -> IO (Paxos d,M.Map Name (Maybe (Vote d)))
-preparation p d = do
+preparation :: (Decree d) => Paxos d -> IO (Paxos d,M.Map Name (Maybe (Vote d)))
+preparation p = do
   let nextProposalId = 1 + lastProposalId p
       prep = Prepare {
         prepareInstanceId = instanceId p,
         tentativeProposalId = nextProposalId
         }
-      paxos = p {
+      prepared = p {
         lastProposalId = nextProposalId
         }
-  votes <- prepare p prep
+  votes <- prepare prepared prep
   return (p,votes)
 
 chooseDecree :: (Decree d) => Paxos d -> d -> M.Map Name (Maybe (Vote d)) -> Maybe d
 chooseDecree p decree votes =
-  if isMajority p votes
+  if isMajority p votes (/= Dissent)
     -- we didn't hear from a majority of members--we have no common decree
     then Nothing
     -- we did hear from the majority
@@ -82,11 +81,21 @@ chooseDecree p decree votes =
       Just Assent -> Just decree
       Just vote -> Just $ voteDecree vote
 
-proposition :: (Decree d) => Paxos d -> d -> IO (Paxos d, Bool)
-proposition p _ = return (p,True)
+proposition :: (Decree d) => Paxos d -> IO (Paxos d, Bool)
+proposition p = do
+  let proposal = Proposal {
+    proposalInstanceId = instanceId p,
+    proposalId = lastProposalId p
+  }
+  responses <- propose p proposal
+  return (p,isMajority p responses id)
 
-acceptance :: (Decree d) => Paxos d -> d -> IO (Paxos d)
-acceptance p _ = return p
+acceptance :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
+acceptance p d = do
+  responses <- accept p d
+  if isMajority p responses id
+    then return (p,Just d)
+    else return (p,Nothing)
 
 --
 -- Actual protocol
@@ -95,23 +104,31 @@ acceptance p _ = return p
 prepare :: (Decree d) => Paxos d -> Prepare -> IO (M.Map Name (Maybe (Vote d)))
 prepare p = pcall p "prepare"
 
-propose :: (Decree d) => Paxos d -> Proposal d -> IO (M.Map Name (Maybe Bool))
-propose p = pcall p "propose"
+{-# ANN propose "HLint: ignore Eta reduce" #-}
+propose :: (Decree d) => Paxos d -> Proposal -> IO (M.Map Name (Maybe Bool))
+propose p proposal = pcall p "propose" proposal
+
+{-# ANN accept "HLint: ignore Eta reduce" #-}
+accept :: (Decree d) => Paxos d -> d -> IO (M.Map Name (Maybe Bool))
+accept p d = pcall p "accept" d
 
 --
 -- Utility
 --
 
 {-|
-Return true if there are enough votes required for a majority quorum, based on number of members
+Return true if there are enough responses that are not Nothing and which pass
+the supplied test.
 -}
-isMajority :: Paxos d -> M.Map Name (Maybe v) -> Bool
-isMajority p votes =
+isMajority :: Paxos d -> M.Map Name (Maybe v) -> (v -> Bool)-> Bool
+isMajority p votes test =
   let actualVotes = filter isJust $ M.elems votes
-  in (toInteger . length) actualVotes >= (toInteger . M.size $ paxosMembers p) `quot` 2
+      countedVotes = filter (\(Just v) -> test v) actualVotes
+  in (toInteger . length) countedVotes >= (toInteger . M.size $ paxosMembers p) `quot` 2
 
 {-|
-Invoke a method on members of the Paxos instance, and fill in responses to ensure completeness
+Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
+will be a response for every `Member`.
 -}
 pcall :: (Decree d,Serialize a,Serialize r) => Paxos d -> String -> a -> IO (M.Map Name (Maybe r))
 pcall p method args = do
