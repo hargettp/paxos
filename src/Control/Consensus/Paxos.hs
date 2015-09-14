@@ -8,7 +8,7 @@
 --
 -- Maintainer  :  phil@haphazardhouse.net
 -- Stability   :  experimental
--- Portability :  $(Portability)
+-- Portability :  non-portable (uses STM)
 --
 --
 -----------------------------------------------------------------------------
@@ -33,7 +33,7 @@ import Data.Maybe
 import Data.Serialize
 
 import Network.Endpoints
-import Network.RPC
+import Network.RPC.Typed
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -147,14 +147,4 @@ pcall :: (Decree d,Serialize a,Serialize r) => Paxos d -> String -> a -> IO (M.M
 pcall p method args = do
   let cs = newCallSite (paxosEndpoint p) (paxosName p)
       members = M.keys $ paxosMembers p
-  responses <- gcallWithTimeout cs members method (fromInteger $ paxosTimeout p) (encode args)
-  return $ decodeResponses responses
-
-decodeResponses :: (Serialize r) => M.Map Name (Maybe Message)  -> M.Map Name (Maybe r)
-decodeResponses = M.map decodeResponse
-  where
-    decodeResponse maybeMsg = case maybeMsg of
-      Nothing -> Nothing
-      Just msg -> case decode msg of
-        Left _ -> Nothing
-        Right response -> Just response
+  gcallWithTimeout cs members method (fromInteger $ paxosTimeout p) args
