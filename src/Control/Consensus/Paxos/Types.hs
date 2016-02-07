@@ -1,5 +1,4 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE ExistentialQuantification #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -20,6 +19,7 @@ module Control.Consensus.Paxos.Types (
   BallotId(..),
   Member(..),
   Vote(..),
+  Votes(..),
   Prepare(..),
   Proposal(..),
   Promise(..),
@@ -51,8 +51,10 @@ data Paxos d = Paxos {
   instanceId :: Integer,
   -- leader fields
   -- | The last proposal made by this member
-  lastProposalId :: Integer --,
-  -- lastVote :: Maybe (Vote d)
+  lastProposalId :: Integer, -- this is lastTried[p]
+  -- member fields
+  nextBallotNumber:: Integer, -- this is nextBal[q]
+  lastVote :: Maybe (Vote d) -- this is prevVote[q]
 }
 
 data BallotId = BallotId {
@@ -83,6 +85,8 @@ instance Ord (Vote d) where
   Assent <= _ = True
   _ <= Assent = False
   a <= b = ballotId a <= ballotId b
+
+type Votes d = M.Map Name (Maybe (Vote d))
 
 instance (Decree d) => Serialize (Vote d)
 

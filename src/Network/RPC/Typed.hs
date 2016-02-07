@@ -17,7 +17,7 @@ module Network.RPC.Typed (
 
   call,
   gcallWithTimeout,
-  hearAll,
+--   hearAll,
 
 ) where
 
@@ -47,13 +47,6 @@ gcallWithTimeout :: (Serialize a,Serialize b) => R.CallSite -> [Name] -> R.Metho
 gcallWithTimeout cs names method delay args = do
   responses <- gcallWithTimeout cs names method delay (encode args)
   return $ decodeResponses responses
-
-hearAll :: (Serialize a,Serialize b) => Endpoint -> Name -> IO (R.Method, a, R.Reply b)
-hearAll endpoint name = do
-  (method,argBytes,replyBytes) <- R.hearAll endpoint name
-  let Right args = decode argBytes
-      reply rsp = replyBytes $ encode rsp
-  return (method,args,reply)
 
 decodeResponses :: (Serialize r) => M.Map Name (Maybe Message)  -> M.Map Name (Maybe r)
 decodeResponses = M.map decodeResponse

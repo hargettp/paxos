@@ -15,13 +15,12 @@
 
 module Control.Consensus.Paxos (
 
-  leadBasicPaxos,
+  leadBasicPaxosInstance,
   leadBasicPaxosRound,
 
   module Control.Consensus.Paxos.Types
 
 ) where
-
 
 -- local imports
 import Control.Consensus.Paxos.Types
@@ -39,12 +38,12 @@ import Network.RPC.Typed
 --------------------------------------------------------------------------------
 
 {-|
-Continue inititiating rounds of Paxos until the decree is finall accepted.
+Continue inititiating rounds of Paxos until the decree is finally accepted.
 
-This will guarantee the decree is eventually accepted, provider the caller doesn't crash.
+This will guarantee the decree is eventually accepted, provided the caller doesn't crash.
 -}
-leadBasicPaxos :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
-leadBasicPaxos p d = do
+leadBasicPaxosInstance :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
+leadBasicPaxosInstance p d = do
   let newP = p {
     lastProposalId = 1 + lastProposalId p
   }
@@ -53,8 +52,8 @@ leadBasicPaxos p d = do
     -- if this decree is accepted, we are done
     Just c | c == d -> return (newP,Just d)
     -- if the response is Nothing or another decree, keep trying
-    _ -> leadBasicPaxos newP d
-
+    _ -> leadBasicPaxosInstance newP d
+    
 {-|
 Lead one round of voting, with one of 3 possible outcomes:
 
@@ -75,7 +74,7 @@ leadBasicPaxosRound p d = do
         then acceptance p chosenDecree
         else return Nothing
 
-preparation :: (Decree d) => Paxos d -> IO (M.Map Name (Maybe (Vote d)))
+preparation :: (Decree d) => Paxos d -> IO (Votes d)
 preparation p = do
   let prep = Prepare {
         prepareInstanceId = instanceId p,
@@ -83,7 +82,7 @@ preparation p = do
         }
   prepare p prep
 
-chooseDecree :: (Decree d) => Paxos d -> d -> M.Map Name (Maybe (Vote d)) -> Maybe d
+chooseDecree :: (Decree d) => Paxos d -> d -> Votes d -> Maybe d
 chooseDecree p decree votes =
   if isMajority p votes (/= Dissent)
     -- we didn't hear from a majority of members--we have no common decree
@@ -114,7 +113,9 @@ acceptance p d = do
 -- Actual protocol
 --
 
-prepare :: (Decree d) => Paxos d -> Prepare -> IO (M.Map Name (Maybe (Vote d)))
+-- caller
+
+prepare :: (Decree d) => Paxos d -> Prepare -> IO (Votes d)
 prepare p = pcall p "prepare"
 
 {-# ANN propose "HLint: ignore Eta reduce" #-}
@@ -124,6 +125,17 @@ propose p proposal = pcall p "propose" proposal
 {-# ANN accept "HLint: ignore Eta reduce" #-}
 accept :: (Decree d) => Paxos d -> d -> IO (M.Map Name (Maybe Bool))
 accept p d = pcall p "accept" d
+
+-- callee
+
+onPrepare :: (Decree d) => Paxos d -> Prepare -> IO (Vote d)
+onPrepare p prep = return Assent
+
+onPropose :: (Decree d) => Paxos d -> Proposal -> IO Bool
+onPropose _ _ = return True
+
+onAccept :: (Decree d) => Paxos d -> d -> IO Bool
+onAccept _ _ = return True
 
 --
 -- Utility
@@ -141,7 +153,7 @@ isMajority p votes test =
 
 {-|
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
-will be a response for every `Member`.
+will be a response for every `Member`, even if it's just `Nothing`.
 -}
 pcall :: (Decree d,Serialize a,Serialize r) => Paxos d -> String -> a -> IO (M.Map Name (Maybe r))
 pcall p method args = do
