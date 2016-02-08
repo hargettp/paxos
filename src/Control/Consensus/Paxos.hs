@@ -27,6 +27,8 @@ import Control.Consensus.Paxos.Types
 
 -- external imports
 
+import Control.Concurrent.STM
+
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Serialize
@@ -42,18 +44,16 @@ Continue inititiating rounds of Paxos until the decree is finally accepted.
 
 This will guarantee the decree is eventually accepted, provided the caller doesn't crash.
 -}
-leadBasicPaxosInstance :: (Decree d) => Paxos d -> d -> IO (Paxos d, Maybe d)
+leadBasicPaxosInstance :: (Decree d) => Paxos d -> d -> IO (Maybe d)
 leadBasicPaxosInstance p d = do
-  let newP = p {
-    lastProposalId = 1 + lastProposalId p
-  }
-  maybeDecree <- leadBasicPaxosRound newP d
+  atomically $ incNextProposedBallotNumber p
+  maybeDecree <- leadBasicPaxosRound p d
   case maybeDecree of
     -- if this decree is accepted, we are done
-    Just c | c == d -> return (newP,Just d)
+    Just c | c == d -> return $ Just d
     -- if the response is Nothing or another decree, keep trying
-    _ -> leadBasicPaxosInstance newP d
-    
+    _ -> leadBasicPaxosInstance p d
+
 {-|
 Lead one round of voting, with one of 3 possible outcomes:
 
@@ -76,9 +76,10 @@ leadBasicPaxosRound p d = do
 
 preparation :: (Decree d) => Paxos d -> IO (Votes d)
 preparation p = do
+  proposedBallotNumber <- atomically $ nextProposedBallotNumber p
   let prep = Prepare {
         prepareInstanceId = instanceId p,
-        tentativeProposalId = lastProposalId p
+        tentativeProposalId = proposedBallotNumber
         }
   prepare p prep
 
@@ -95,9 +96,10 @@ chooseDecree p decree votes =
 
 proposition :: (Decree d) => Paxos d -> IO Bool
 proposition p = do
+  proposedBallotNumber <- atomically $ nextProposedBallotNumber p
   let proposal = Proposal {
     proposalInstanceId = instanceId p,
-    proposalId = lastProposalId p
+    proposedBallotNumber = proposedBallotNumber
   }
   responses <- propose p proposal
   return $ isMajority p responses id
@@ -136,6 +138,22 @@ onPropose _ _ = return True
 
 onAccept :: (Decree d) => Paxos d -> d -> IO Bool
 onAccept _ _ = return True
+
+---
+--- Ledger functions
+---
+
+incNextProposedBallotNumber :: Paxos d -> STM Integer
+incNextProposedBallotNumber p = do
+  let vLedger = paxosLedger p
+  modifyTVar vLedger $ \ledger -> ledger {lastProposedBallotNumber = lastProposedBallotNumber ledger + 1}
+  ledger <- readTVar vLedger
+  return $ lastProposedBallotNumber ledger
+
+nextProposedBallotNumber :: Paxos d -> STM Integer
+nextProposedBallotNumber p = do
+  ledger <- readTVar $ paxosLedger p
+  return $ lastProposedBallotNumber ledger
 
 --
 -- Utility

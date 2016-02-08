@@ -16,6 +16,7 @@
 module Control.Consensus.Paxos.Types (
 
   Paxos(..),
+  Ledger(..),
   BallotId(..),
   Member(..),
   Vote(..),
@@ -31,6 +32,7 @@ module Control.Consensus.Paxos.Types (
 
 -- external imports
 
+import Control.Concurrent.STM
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Serialize
@@ -49,9 +51,13 @@ data Paxos d = Paxos {
   paxosMembers :: M.Map Name Member,
   paxosTimeout :: Integer,
   instanceId :: Integer,
+  paxosLedger :: TVar (Ledger d)
+}
+
+data Ledger d = Ledger {
   -- leader fields
   -- | The last proposal made by this member
-  lastProposalId :: Integer, -- this is lastTried[p]
+  lastProposedBallotNumber :: Integer, -- this is lastTried[p]
   -- member fields
   nextBallotNumber:: Integer, -- this is nextBal[q]
   lastVote :: Maybe (Vote d) -- this is prevVote[q]
@@ -114,7 +120,7 @@ Eq. BeginBallot in basic protocolx
 -}
 data Proposal = Proposal {
   proposalInstanceId :: Integer,
-  proposalId :: Integer
+  proposedBallotNumber :: Integer
 } deriving (Generic)
 
 instance Serialize Proposal
