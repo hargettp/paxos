@@ -46,7 +46,6 @@ This will guarantee the decree is eventually accepted, provided the caller doesn
 -}
 leadBasicPaxosInstance :: (Decree d) => Paxos d -> d -> IO (Maybe d)
 leadBasicPaxosInstance p d = do
-  atomically $ incNextProposedBallotNumber p
   maybeDecree <- leadBasicPaxosRound p d
   case maybeDecree of
     -- if this decree is accepted, we are done
@@ -76,10 +75,10 @@ leadBasicPaxosRound p d = do
 
 preparation :: (Decree d) => Paxos d -> IO (Votes d)
 preparation p = do
-  proposedBallotNumber <- atomically $ nextProposedBallotNumber p
+  proposedBallotId <- atomically $ nextProposedBallotId p
   let prep = Prepare {
         prepareInstanceId = instanceId p,
-        tentativeProposalId = proposedBallotNumber
+        tentativeBallotId = proposedBallotId
         }
   prepare p prep
 
@@ -96,10 +95,10 @@ chooseDecree p decree votes =
 
 proposition :: (Decree d) => Paxos d -> IO Bool
 proposition p = do
-  proposedBallotNumber <- atomically $ nextProposedBallotNumber p
+  proposedBallotId <- atomically $ currentProposedBallotId p
   let proposal = Proposal {
     proposalInstanceId = instanceId p,
-    proposedBallotNumber = proposedBallotNumber
+    proposedBallotId = proposedBallotId
   }
   responses <- propose p proposal
   return $ isMajority p responses id
@@ -143,18 +142,20 @@ onAccept _ _ = return True
 --- Ledger functions
 ---
 
-incNextProposedBallotNumber :: Paxos d -> STM Integer
-incNextProposedBallotNumber p = do
+nextProposedBallotId :: Paxos d -> STM BallotId
+nextProposedBallotId p = do
   let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger -> ledger {lastProposedBallotNumber = lastProposedBallotNumber ledger + 1}
-  ledger <- readTVar vLedger
-  return $ lastProposedBallotNumber ledger
+  currentProposedBallotId p
 
-nextProposedBallotNumber :: Paxos d -> STM Integer
-nextProposedBallotNumber p = do
+currentProposedBallotId :: Paxos d -> STM BallotId
+currentProposedBallotId p = do
   ledger <- readTVar $ paxosLedger p
-  return $ lastProposedBallotNumber ledger
-
+  return BallotId {
+    ballotNumber = lastProposedBallotNumber ledger,
+    proposerId = paxosMemberId p
+  }
+  
 --
 -- Utility
 --

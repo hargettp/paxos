@@ -48,6 +48,7 @@ data Paxos d = Paxos {
   -- common fields
   paxosEndpoint :: Endpoint,
   paxosName :: Name,
+  paxosMemberId :: Integer,
   paxosMembers :: M.Map Name Member,
   paxosTimeout :: Integer,
   instanceId :: Integer,
@@ -101,7 +102,7 @@ Eq. to NextBallot in basic protocol
 -}
 data Prepare = Prepare {
   prepareInstanceId :: Integer,
-  tentativeProposalId :: Integer
+  tentativeBallotId :: BallotId
 } deriving (Generic)
 
 instance Serialize Prepare
@@ -120,7 +121,7 @@ Eq. BeginBallot in basic protocolx
 -}
 data Proposal = Proposal {
   proposalInstanceId :: Integer,
-  proposedBallotNumber :: Integer
+  proposedBallotId :: BallotId
 } deriving (Generic)
 
 instance Serialize Proposal
