@@ -119,9 +119,10 @@ data Promise d = Promise {
 {-|
 Eq. BeginBallot in basic protocolx
 -}
-data Proposal = Proposal {
+data Proposal d =  Proposal {
   proposalInstanceId :: Integer,
-  proposedBallotId :: BallotId
-} deriving (Generic)
+  proposedBallotId :: BallotId,
+  proposedDecree :: d
+} deriving Generic
 
-instance Serialize Proposal
+instance (Decree d) => Serialize (Proposal d)

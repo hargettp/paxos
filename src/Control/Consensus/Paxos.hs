@@ -68,7 +68,7 @@ leadBasicPaxosRound p d = do
   case maybeChosenDecree of
     Nothing -> return Nothing
     Just chosenDecree -> do
-      promised <- proposition p
+      promised <- proposition p d
       if promised
         then acceptance p chosenDecree
         else return Nothing
@@ -93,12 +93,13 @@ chooseDecree p decree votes =
       Just Assent -> Just decree
       Just vote -> Just $ voteDecree vote
 
-proposition :: (Decree d) => Paxos d -> IO Bool
-proposition p = do
+proposition :: (Decree d) => Paxos d -> d -> IO Bool
+proposition p d = do
   proposedBallotId <- atomically $ currentProposedBallotId p
   let proposal = Proposal {
     proposalInstanceId = instanceId p,
-    proposedBallotId = proposedBallotId
+    proposedBallotId = proposedBallotId,
+    proposedDecree = d
   }
   responses <- propose p proposal
   return $ isMajority p responses id
@@ -120,7 +121,7 @@ prepare :: (Decree d) => Paxos d -> Prepare -> IO (Votes d)
 prepare p = pcall p "prepare"
 
 {-# ANN propose "HLint: ignore Eta reduce" #-}
-propose :: (Decree d) => Paxos d -> Proposal -> IO (M.Map Name (Maybe Bool))
+propose :: (Decree d) => Paxos d -> Proposal d-> IO (M.Map Name (Maybe Bool))
 propose p proposal = pcall p "propose" proposal
 
 {-# ANN accept "HLint: ignore Eta reduce" #-}
@@ -132,7 +133,7 @@ accept p d = pcall p "accept" d
 onPrepare :: (Decree d) => Paxos d -> Prepare -> IO (Vote d)
 onPrepare p prep = return Assent
 
-onPropose :: (Decree d) => Paxos d -> Proposal -> IO Bool
+onPropose :: (Decree d) => Paxos d -> Proposal d -> IO Bool
 onPropose _ _ = return True
 
 onAccept :: (Decree d) => Paxos d -> d -> IO Bool
@@ -155,7 +156,7 @@ currentProposedBallotId p = do
     ballotNumber = lastProposedBallotNumber ledger,
     proposerId = paxosMemberId p
   }
-  
+
 --
 -- Utility
 --
