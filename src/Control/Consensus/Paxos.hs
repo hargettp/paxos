@@ -75,10 +75,10 @@ leadBasicPaxosRound p d = do
 
 preparation :: (Decree d) => Paxos d -> IO (Votes d)
 preparation p = do
-  proposedBallotId <- atomically $ nextProposedBallotId p
+  proposedBallotNumber <- atomically $ incrementNextProposedBallotNumber p
   let prep = Prepare {
         prepareInstanceId = instanceId p,
-        tentativeBallotId = proposedBallotId
+        tentativeBallotNumber = proposedBallotNumber
         }
   prepare p prep
 
@@ -95,10 +95,10 @@ chooseDecree p decree votes =
 
 proposition :: (Decree d) => Paxos d -> d -> IO Bool
 proposition p d = do
-  proposedBallotId <- atomically $ currentProposedBallotId p
+  proposedBallotNumber <- atomically $ nextProposedBallotNumber p
   let proposal = Proposal {
     proposalInstanceId = instanceId p,
-    proposedBallotId = proposedBallotId,
+    proposedBallotNumber = proposedBallotNumber,
     proposedDecree = d
   }
   responses <- propose p proposal
@@ -131,31 +131,54 @@ accept p d = pcall p "accept" d
 -- callee
 
 onPrepare :: (Decree d) => Paxos d -> Prepare -> IO (Vote d)
-onPrepare p prep = return Assent
+onPrepare p prep = atomically $ do
+  let preparedBallotNumber = tentativeBallotNumber prep
+      vLedger = paxosLedger p
+  ledger <- readTVar vLedger
+  if preparedBallotNumber > nextBallotNumber ledger
+    then do
+      modifyTVar vLedger $ \ledger -> ledger {nextBallotNumber = preparedBallotNumber}
+      case lastVote ledger of
+        Just vote -> return vote
+        Nothing -> return Assent
+    else
+      return Dissent
 
 onPropose :: (Decree d) => Paxos d -> Proposal d -> IO Bool
-onPropose _ _ = return True
+onPropose p prop = atomically $ do
+  ballotNumber <- nextProposedBallotNumber p
+  if ballotNumber == proposedBallotNumber prop
+    then do
+      setLastVote p $ proposedDecree prop
+      return True
+    else
+      return False
 
-onAccept :: (Decree d) => Paxos d -> d -> IO Bool
-onAccept _ _ = return True
+onAccept :: (Decree d) => Paxos d -> d -> IO ()
+onAccept p d = return ()
 
 ---
 --- Ledger functions
 ---
 
-nextProposedBallotId :: Paxos d -> STM BallotId
-nextProposedBallotId p = do
+incrementNextProposedBallotNumber :: Paxos d -> STM Integer
+incrementNextProposedBallotNumber p = do
   let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger -> ledger {lastProposedBallotNumber = lastProposedBallotNumber ledger + 1}
-  currentProposedBallotId p
+  nextProposedBallotNumber p
 
-currentProposedBallotId :: Paxos d -> STM BallotId
-currentProposedBallotId p = do
+nextProposedBallotNumber :: Paxos d -> STM Integer
+nextProposedBallotNumber p = do
   ledger <- readTVar $ paxosLedger p
-  return BallotId {
-    ballotNumber = lastProposedBallotNumber ledger,
-    proposerId = paxosMemberId p
-  }
+  return $ lastProposedBallotNumber ledger
+
+setLastVote :: Paxos d -> d-> STM (Vote d)
+setLastVote p decree = do
+  ballotNumber <- nextProposedBallotNumber p
+  let vote = Vote ballotNumber decree
+      vLedger = paxosLedger p
+  modifyTVar vLedger $ \ledger -> ledger { lastVote = Just vote}
+  return vote
 
 --
 -- Utility

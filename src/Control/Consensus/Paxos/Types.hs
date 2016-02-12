@@ -75,39 +75,48 @@ data Member = Member {
   memberPriority :: Integer
   }
 
+{-|
+Eq. to NextBallot in basic protocol
+-}
+data Prepare = Prepare {
+  prepareInstanceId :: Integer,
+  tentativeBallotNumber :: Integer
+} deriving (Generic)
+
+instance Serialize Prepare
+
 data Vote d = Dissent |
   Assent |
   Vote {
-    ballotId :: BallotId,
+    voteBallotNumber :: Integer,
     voteDecree :: d
     }
   deriving (Generic)
 
 instance Eq (Vote d) where
-  a == b = ballotId a == ballotId b
+  a == b = voteBallotNumber a == voteBallotNumber b
 
 instance Ord (Vote d) where
   Dissent <= _ = True
   _ <= Dissent = False
   Assent <= _ = True
   _ <= Assent = False
-  a <= b = ballotId a <= ballotId b
+  a <= b = voteBallotNumber a <= voteBallotNumber b
 
 type Votes d = M.Map Name (Maybe (Vote d))
 
 instance (Decree d) => Serialize (Vote d)
 
-{-|
-Eq. to NextBallot in basic protocol
--}
-data Prepare = Prepare {
-  prepareInstanceId :: Integer,
-  tentativeBallotId :: BallotId
-} deriving (Generic)
-
-instance Serialize Prepare
-
 class (Eq d,Serialize d) => Decree d
+
+{-|
+Eq. BeginBallot in basic protocolx
+-}
+data Proposal d =  Proposal {
+  proposalInstanceId :: Integer,
+  proposedBallotNumber :: Integer,
+  proposedDecree :: d
+} deriving Generic
 
 data Promise d = Promise {
   } |
@@ -115,14 +124,5 @@ data Promise d = Promise {
     declineInstanceId :: Integer,
     declineProposalId :: Integer
   }
-
-{-|
-Eq. BeginBallot in basic protocolx
--}
-data Proposal d =  Proposal {
-  proposalInstanceId :: Integer,
-  proposedBallotId :: BallotId,
-  proposedDecree :: d
-} deriving Generic
 
 instance (Decree d) => Serialize (Proposal d)
