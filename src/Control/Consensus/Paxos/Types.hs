@@ -17,7 +17,6 @@ module Control.Consensus.Paxos.Types (
 
   Paxos(..),
   Ledger(..),
-  BallotId(..),
   Member(..),
   Vote(..),
   Votes(..),
@@ -64,13 +63,6 @@ data Ledger d = Ledger {
   lastVote :: Maybe (Vote d) -- this is prevVote[q]
 }
 
-data BallotId = BallotId {
-  ballotNumber :: Integer,
-  proposerId :: Integer
-} deriving (Eq,Ord,Generic)
-
-instance Serialize BallotId
-
 data Member = Member {
   memberPriority :: Integer
   }
@@ -88,6 +80,7 @@ instance Serialize Prepare
 data Vote d = Dissent |
   Assent |
   Vote {
+    voteInstanceId :: Integer,
     voteBallotNumber :: Integer,
     voteDecree :: d
     }
@@ -118,11 +111,15 @@ data Proposal d =  Proposal {
   proposedDecree :: d
 } deriving Generic
 
-data Promise d = Promise {
+instance (Decree d) => Serialize (Proposal d)
+
+data Promise = Promise {
+  promiseInstanceId :: Integer,
+  promiseBallotNumber :: Integer
   } |
   Decline {
     declineInstanceId :: Integer,
-    declineProposalId :: Integer
-  }
+    declineBallotNumber :: Integer
+  } deriving(Generic)
 
-instance (Decree d) => Serialize (Proposal d)
+instance Serialize Promise

@@ -102,7 +102,12 @@ proposition p d = do
     proposedDecree = d
   }
   responses <- propose p proposal
-  return $ isMajority p responses id
+  return $ isMajority p responses $ \promise ->
+    case promise of
+      Promise _ _ ->
+        (promiseBallotNumber promise == proposedBallotNumber) &&
+         (promiseInstanceId promise == paxosMemberId p)
+      Decline _ _ -> False
 
 acceptance :: (Decree d) => Paxos d -> d -> IO (Maybe d)
 acceptance p d = do
@@ -120,13 +125,11 @@ acceptance p d = do
 prepare :: (Decree d) => Paxos d -> Prepare -> IO (Votes d)
 prepare p = pcall p "prepare"
 
-{-# ANN propose "HLint: ignore Eta reduce" #-}
-propose :: (Decree d) => Paxos d -> Proposal d-> IO (M.Map Name (Maybe Bool))
-propose p proposal = pcall p "propose" proposal
+propose :: (Decree d) => Paxos d -> Proposal d-> IO (M.Map Name (Maybe Promise))
+propose p = pcall p "propose"
 
-{-# ANN accept "HLint: ignore Eta reduce" #-}
 accept :: (Decree d) => Paxos d -> d -> IO (M.Map Name (Maybe Bool))
-accept p d = pcall p "accept" d
+accept p = pcall p "accept"
 
 -- callee
 
@@ -144,18 +147,26 @@ onPrepare p prep = atomically $ do
     else
       return Dissent
 
-onPropose :: (Decree d) => Paxos d -> Proposal d -> IO Bool
+onPropose :: (Decree d) => Paxos d -> Proposal d -> IO Promise
 onPropose p prop = atomically $ do
   ballotNumber <- nextProposedBallotNumber p
   if ballotNumber == proposedBallotNumber prop
     then do
-      setLastVote p $ proposedDecree prop
-      return True
+      let instanceId = proposalInstanceId prop
+          decree = proposedDecree prop
+      setLastVote p instanceId decree
+      return Promise {
+          promiseInstanceId = proposalInstanceId prop,
+          promiseBallotNumber = proposedBallotNumber prop
+        }
     else
-      return False
+      return Decline {
+          declineInstanceId = proposalInstanceId prop,
+          declineBallotNumber = ballotNumber
+        }
 
-onAccept :: (Decree d) => Paxos d -> d -> IO ()
-onAccept p d = return ()
+onAccept :: (Decree d) => Paxos d -> d -> IO d
+onAccept p = return
 
 ---
 --- Ledger functions
@@ -164,7 +175,12 @@ onAccept p d = return ()
 incrementNextProposedBallotNumber :: Paxos d -> STM Integer
 incrementNextProposedBallotNumber p = do
   let vLedger = paxosLedger p
-  modifyTVar vLedger $ \ledger -> ledger {lastProposedBallotNumber = lastProposedBallotNumber ledger + 1}
+  modifyTVar vLedger $ \ledger ->
+    let lastProposed = lastProposedBallotNumber ledger
+        nextHeard = nextBallotNumber ledger
+    in ledger {
+      lastProposedBallotNumber = 1 + max lastProposed nextHeard
+      }
   nextProposedBallotNumber p
 
 nextProposedBallotNumber :: Paxos d -> STM Integer
@@ -172,10 +188,14 @@ nextProposedBallotNumber p = do
   ledger <- readTVar $ paxosLedger p
   return $ lastProposedBallotNumber ledger
 
-setLastVote :: Paxos d -> d-> STM (Vote d)
-setLastVote p decree = do
+setLastVote :: Paxos d -> Integer -> d-> STM (Vote d)
+setLastVote p instanceId decree = do
   ballotNumber <- nextProposedBallotNumber p
-  let vote = Vote ballotNumber decree
+  let vote = Vote {
+        voteInstanceId = instanceId,
+        voteBallotNumber = ballotNumber,
+        voteDecree = decree
+      }
       vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger -> ledger { lastVote = Just vote}
   return vote
