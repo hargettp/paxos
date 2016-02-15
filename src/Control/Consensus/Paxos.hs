@@ -154,7 +154,12 @@ onPropose p prop = atomically $ do
     then do
       let instanceId = proposalInstanceId prop
           decree = proposedDecree prop
-      setLastVote p instanceId decree
+          vote = Vote {
+            voteInstanceId = instanceId,
+            voteBallotNumber = ballotNumber,
+            voteDecree = decree
+          }
+      setLastVote p vote
       return Promise {
           promiseInstanceId = proposalInstanceId prop,
           promiseBallotNumber = proposedBallotNumber prop
@@ -188,15 +193,10 @@ nextProposedBallotNumber p = do
   ledger <- readTVar $ paxosLedger p
   return $ lastProposedBallotNumber ledger
 
-setLastVote :: Paxos d -> Integer -> d-> STM (Vote d)
-setLastVote p instanceId decree = do
+setLastVote :: Paxos d -> Vote d-> STM (Vote d)
+setLastVote p vote = do
   ballotNumber <- nextProposedBallotNumber p
-  let vote = Vote {
-        voteInstanceId = instanceId,
-        voteBallotNumber = ballotNumber,
-        voteDecree = decree
-      }
-      vLedger = paxosLedger p
+  let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger -> ledger { lastVote = Just vote}
   return vote
 
