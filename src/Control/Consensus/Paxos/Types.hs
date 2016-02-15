@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -22,7 +23,8 @@ module Control.Consensus.Paxos.Types (
   Votes(..),
   Prepare(..),
   Proposal(..),
-  Decree
+  Decree(..),
+  Decreeable(..)
 
 ) where
 
@@ -56,10 +58,10 @@ data Paxos d = Paxos {
 data Ledger d = Ledger {
   -- leader fields
   -- | The last proposal made by this member
-  lastProposedBallotNumber :: Integer, -- this is lastTried[p]
+  lastProposedBallotNumber :: Integer, -- ^ this is lastTried[p]
   -- member fields
-  nextBallotNumber:: Integer, -- this is nextBal[q]
-  lastVote :: Maybe (Vote d) -- this is prevVote[q]
+  nextBallotNumber:: Integer, -- ^ this is nextBal[q]
+  lastVote :: Maybe (Vote d) -- ^ this is prevVote[q]
 }
 
 data Member = Member {
@@ -84,7 +86,7 @@ data Vote d = Dissent {
   Vote {
     voteInstanceId :: Integer,
     voteBallotNumber :: Integer,
-    voteDecree :: d
+    voteDecree :: Decree d
     }
   deriving (Generic)
 
@@ -100,9 +102,27 @@ instance Ord (Vote d) where
 
 type Votes d = M.Map Name (Maybe (Vote d))
 
-instance (Decree d) => Serialize (Vote d)
+instance (Decreeable d) => Serialize (Vote d)
 
-class (Eq d,Serialize d) => Decree d
+class (Generic d, Serialize d) => Decreeable d
+
+data Decree d = (Decreeable d) => Decree {
+  -- the member from which this decree originated
+  decreeMemberId :: Integer,
+  decreeable :: d
+  }
+
+instance (Decreeable d) => Serialize (Decree d) where
+  put d = do
+    put $ decreeMemberId d
+    put $ decreeable d
+  get = do
+    memberId <- get
+    decree <- get
+    return Decree {
+      decreeMemberId = memberId,
+      decreeable = decree
+      }
 
 {-|
 Eq. BeginBallot in basic protocolx
@@ -110,7 +130,7 @@ Eq. BeginBallot in basic protocolx
 data Proposal d =  Proposal {
   proposalInstanceId :: Integer,
   proposedBallotNumber :: Integer,
-  proposedDecree :: d
+  proposedDecree :: Decree d
 } deriving Generic
 
-instance (Decree d) => Serialize (Proposal d)
+instance (Decreeable d) => Serialize (Proposal d)
