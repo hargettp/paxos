@@ -80,11 +80,18 @@ preparation p = do
         prepareInstanceId = instanceId p,
         tentativeBallotNumber = proposedBallotNumber
         }
-  prepare p prep
+  votes <- prepare p prep
+  atomically $ do
+    ballotNumber <- maxBallotNumber p votes
+    setNextBallotNumber p ballotNumber
+  return votes
 
 chooseDecree :: (Decree d) => Paxos d -> d -> Votes d -> Maybe d
 chooseDecree p decree votes =
-  if isMajority p votes (/= Dissent)
+  if isMajority p votes $ \vote ->
+    case vote of
+      Dissent{} -> False
+      _ -> True
     -- we didn't hear from a majority of members--we have no common decree
     then Nothing
     -- we did hear from the majority
@@ -101,13 +108,16 @@ proposition p d = do
     proposedBallotNumber = proposedBallotNumber,
     proposedDecree = d
   }
-  responses <- propose p proposal
-  return $ isMajority p responses $ \promise ->
-    case promise of
-      Promise _ _ ->
-        (promiseBallotNumber promise == proposedBallotNumber) &&
-         (promiseInstanceId promise == paxosMemberId p)
-      Decline _ _ -> False
+  votes <- propose p proposal
+  atomically $ do
+    ballotNumber <- maxBallotNumber p votes
+    setNextBallotNumber p ballotNumber
+  return $ isMajority p votes $ \vote ->
+    case vote of
+      Vote {} ->
+        (voteBallotNumber vote == proposedBallotNumber) &&
+         (voteInstanceId vote == paxosMemberId p)
+      Dissent {} -> False
 
 acceptance :: (Decree d) => Paxos d -> d -> IO (Maybe d)
 acceptance p d = do
@@ -125,7 +135,7 @@ acceptance p d = do
 prepare :: (Decree d) => Paxos d -> Prepare -> IO (Votes d)
 prepare p = pcall p "prepare"
 
-propose :: (Decree d) => Paxos d -> Proposal d-> IO (M.Map Name (Maybe Promise))
+propose :: (Decree d) => Paxos d -> Proposal d-> IO (Votes d)
 propose p = pcall p "propose"
 
 accept :: (Decree d) => Paxos d -> d -> IO (M.Map Name (Maybe Bool))
@@ -138,16 +148,21 @@ onPrepare p prep = atomically $ do
   let preparedBallotNumber = tentativeBallotNumber prep
       vLedger = paxosLedger p
   ledger <- readTVar vLedger
-  if preparedBallotNumber > nextBallotNumber ledger
+  let ballotNumber = nextBallotNumber ledger
+  if preparedBallotNumber > ballotNumber
     then do
       modifyTVar vLedger $ \ledger -> ledger {nextBallotNumber = preparedBallotNumber}
       case lastVote ledger of
         Just vote -> return vote
         Nothing -> return Assent
-    else
-      return Dissent
+    else do
+      modifyTVar vLedger $ \ledger -> ledger {nextBallotNumber = preparedBallotNumber}
+      return Dissent {
+        dissentInstanceId = instanceId p,
+        dissentBallotNumber = ballotNumber
+      }
 
-onPropose :: (Decree d) => Paxos d -> Proposal d -> IO Promise
+onPropose :: (Decree d) => Paxos d -> Proposal d -> IO (Vote d)
 onPropose p prop = atomically $ do
   ballotNumber <- nextProposedBallotNumber p
   if ballotNumber == proposedBallotNumber prop
@@ -160,14 +175,11 @@ onPropose p prop = atomically $ do
             voteDecree = decree
           }
       setLastVote p vote
-      return Promise {
-          promiseInstanceId = proposalInstanceId prop,
-          promiseBallotNumber = proposedBallotNumber prop
-        }
+      return vote
     else
-      return Decline {
-          declineInstanceId = proposalInstanceId prop,
-          declineBallotNumber = ballotNumber
+      return Dissent {
+          dissentInstanceId = proposalInstanceId prop,
+          dissentBallotNumber = ballotNumber
         }
 
 onAccept :: (Decree d) => Paxos d -> d -> IO d
@@ -200,6 +212,13 @@ setLastVote p vote = do
   modifyTVar vLedger $ \ledger -> ledger { lastVote = Just vote}
   return vote
 
+setNextBallotNumber :: Paxos d -> Integer -> STM ()
+setNextBallotNumber p newNextBallotNumber = do
+  let vLedger = paxosLedger p
+  modifyTVar vLedger $ \ledger ->
+    let ballotNumber = nextBallotNumber ledger
+    in ledger {nextBallotNumber = max ballotNumber newNextBallotNumber}
+
 --
 -- Utility
 --
@@ -213,6 +232,22 @@ isMajority p votes test =
   let actualVotes = filter isJust $ M.elems votes
       countedVotes = filter (\(Just v) -> test v) actualVotes
   in (toInteger . length) countedVotes >= (toInteger . M.size $ paxosMembers p) `quot` 2
+
+maxBallotNumber :: Paxos d -> Votes d -> STM Integer
+maxBallotNumber p votes = do
+  let vLedger = paxosLedger p
+  ledger <- readTVar vLedger
+  let maxVote = maximum votes
+      ballotNumber = nextBallotNumber ledger
+  return $ case maxVote of
+    Just vote -> case vote of
+      Dissent{} -> max (dissentBallotNumber vote) ballotNumber
+      Assent -> ballotNumber
+      Vote{} -> max (voteBallotNumber vote) ballotNumber
+    Nothing -> ballotNumber
+
+  -- return $ foldr (\vote maxSoFar -> maximum maxSoFar (voteBallotNumber vote ))
+  --   (nextBallotNumber ledger) M.elems votes
 
 {-|
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there

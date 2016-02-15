@@ -22,7 +22,6 @@ module Control.Consensus.Paxos.Types (
   Votes(..),
   Prepare(..),
   Proposal(..),
-  Promise(..),
   Decree
 
 ) where
@@ -77,7 +76,10 @@ data Prepare = Prepare {
 
 instance Serialize Prepare
 
-data Vote d = Dissent |
+data Vote d = Dissent {
+    dissentInstanceId :: Integer,
+    dissentBallotNumber :: Integer
+  } |
   Assent |
   Vote {
     voteInstanceId :: Integer,
@@ -90,8 +92,8 @@ instance Eq (Vote d) where
   a == b = voteBallotNumber a == voteBallotNumber b
 
 instance Ord (Vote d) where
-  Dissent <= _ = True
-  _ <= Dissent = False
+  Dissent _ _ <= _ = True
+  _ <= Dissent _ _ = False
   Assent <= _ = True
   _ <= Assent = False
   a <= b = voteBallotNumber a <= voteBallotNumber b
@@ -112,14 +114,3 @@ data Proposal d =  Proposal {
 } deriving Generic
 
 instance (Decree d) => Serialize (Proposal d)
-
-data Promise = Promise {
-  promiseInstanceId :: Integer,
-  promiseBallotNumber :: Integer
-  } |
-  Decline {
-    declineInstanceId :: Integer,
-    declineBallotNumber :: Integer
-  } deriving(Generic)
-
-instance Serialize Promise
