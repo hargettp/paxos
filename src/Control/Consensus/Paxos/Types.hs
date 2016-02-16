@@ -51,10 +51,13 @@ data Paxos d = Paxos {
   paxosMemberId :: Integer,
   paxosMembers :: M.Map Name Member,
   paxosTimeout :: Integer,
-  instanceId :: Integer,
+  paxosInstanceId :: Integer,
   paxosLedger :: TVar (Ledger d)
 }
 
+{-|
+Central state for an instance of the Paxos algorithm.
+-}
 data Ledger d = Ledger {
   -- leader fields
   -- | The last proposal made by this member

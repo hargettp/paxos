@@ -83,7 +83,7 @@ preparation :: (Decreeable d) => Paxos d -> IO (Votes d)
 preparation p = do
   proposedBallotNumber <- atomically $ incrementNextProposedBallotNumber p
   let prep = Prepare {
-        prepareInstanceId = instanceId p,
+        prepareInstanceId = paxosInstanceId p,
         tentativeBallotNumber = proposedBallotNumber
         }
   votes <- prepare p prep
@@ -110,7 +110,7 @@ proposition :: (Decreeable d) => Paxos d -> Decree d -> IO Bool
 proposition p d = do
   proposedBallotNumber <- atomically $ nextProposedBallotNumber p
   let proposal = Proposal {
-    proposalInstanceId = instanceId p,
+    proposalInstanceId = paxosInstanceId p,
     proposedBallotNumber = proposedBallotNumber,
     proposedDecree = d
   }
@@ -164,7 +164,7 @@ onPrepare p prep = atomically $ do
     else do
       modifyTVar vLedger $ \ledger -> ledger {nextBallotNumber = preparedBallotNumber}
       return Dissent {
-        dissentInstanceId = instanceId p,
+        dissentInstanceId = paxosInstanceId p,
         dissentBallotNumber = ballotNumber
       }
 
