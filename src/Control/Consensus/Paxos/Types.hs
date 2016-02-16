@@ -18,13 +18,15 @@ module Control.Consensus.Paxos.Types (
 
   Paxos(..),
   Ledger(..),
-  Member(..),
   Vote(..),
   Votes(..),
   Prepare(..),
   Proposal(..),
   Decree(..),
-  Decreeable(..)
+  Decreeable(..),
+  BallotNumber(..),
+  InstanceId(..),
+  MemberId(..)
 
 ) where
 
@@ -36,6 +38,7 @@ import Control.Concurrent.STM
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Serialize
+import qualified Data.Set as S
 
 import GHC.Generics
 
@@ -48,10 +51,10 @@ data Paxos d = Paxos {
   -- common fields
   paxosEndpoint :: Endpoint,
   paxosName :: Name,
-  paxosMemberId :: Integer,
-  paxosMembers :: M.Map Name Member,
+  paxosMemberId :: MemberId,
+  paxosMembers :: S.Set Name,
   paxosTimeout :: Integer,
-  paxosInstanceId :: Integer,
+  paxosInstanceId :: InstanceId,
   paxosLedger :: TVar (Ledger d)
 }
 
@@ -61,34 +64,30 @@ Central state for an instance of the Paxos algorithm.
 data Ledger d = Ledger {
   -- leader fields
   -- | The last proposal made by this member
-  lastProposedBallotNumber :: Integer, -- ^ this is lastTried[p]
+  lastProposedBallotNumber :: BallotNumber, -- ^ this is lastTried[p]
   -- member fields
-  nextBallotNumber:: Integer, -- ^ this is nextBal[q]
+  nextBallotNumber:: BallotNumber, -- ^ this is nextBal[q]
   lastVote :: Maybe (Vote d) -- ^ this is prevVote[q]
 }
-
-data Member = Member {
-  memberPriority :: Integer
-  }
 
 {-|
 Eq. to NextBallot in basic protocol
 -}
 data Prepare = Prepare {
-  prepareInstanceId :: Integer,
-  tentativeBallotNumber :: Integer
+  prepareInstanceId :: InstanceId,
+  tentativeBallotNumber :: BallotNumber
 } deriving (Generic)
 
 instance Serialize Prepare
 
 data Vote d = Dissent {
-    dissentInstanceId :: Integer,
-    dissentBallotNumber :: Integer
+    dissentInstanceId :: InstanceId,
+    dissentBallotNumber :: BallotNumber
   } |
   Assent |
   Vote {
-    voteInstanceId :: Integer,
-    voteBallotNumber :: Integer,
+    voteInstanceId :: InstanceId,
+    voteBallotNumber :: BallotNumber,
     voteDecree :: Decree d
     }
   deriving (Generic)
@@ -111,7 +110,7 @@ class (Generic d, Serialize d) => Decreeable d
 
 data Decree d = (Decreeable d) => Decree {
   -- the member from which this decree originated
-  decreeMemberId :: Integer,
+  decreeMemberId :: MemberId,
   decreeable :: d
   }
 
@@ -131,9 +130,21 @@ instance (Decreeable d) => Serialize (Decree d) where
 Eq. BeginBallot in basic protocolx
 -}
 data Proposal d =  Proposal {
-  proposalInstanceId :: Integer,
-  proposedBallotNumber :: Integer,
+  proposalInstanceId :: InstanceId,
+  proposedBallotNumber :: BallotNumber,
   proposedDecree :: Decree d
 } deriving Generic
 
 instance (Decreeable d) => Serialize (Proposal d)
+
+newtype InstanceId = InstanceId Integer deriving (Eq, Ord, Show, Generic)
+
+instance Serialize InstanceId
+
+newtype MemberId = MemberId Integer deriving (Eq, Ord, Show, Generic)
+
+instance Serialize MemberId
+
+newtype BallotNumber = BallotNumber Integer deriving (Eq, Ord, Show, Generic)
+
+instance Serialize BallotNumber

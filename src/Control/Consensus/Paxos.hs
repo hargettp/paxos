@@ -32,6 +32,7 @@ import Control.Concurrent.STM
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Serialize
+import qualified Data.Set as S
 
 import Network.Endpoints
 import Network.RPC.Typed
@@ -122,7 +123,7 @@ proposition p d = do
     case vote of
       Vote {} ->
         (voteBallotNumber vote == proposedBallotNumber) &&
-         (voteInstanceId vote == paxosMemberId p)
+         (voteInstanceId vote == paxosInstanceId p)
       Dissent {} -> False
 
 acceptance :: (Decreeable d) => Paxos d -> Decree d -> IO (Maybe (Decree d))
@@ -195,18 +196,18 @@ onAccept p d = return $ decreeable d
 --- Ledger functions
 ---
 
-incrementNextProposedBallotNumber :: Paxos d -> STM Integer
+incrementNextProposedBallotNumber :: Paxos d -> STM BallotNumber
 incrementNextProposedBallotNumber p = do
   let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger ->
-    let lastProposed = lastProposedBallotNumber ledger
-        nextHeard = nextBallotNumber ledger
+    let BallotNumber lastProposed = lastProposedBallotNumber ledger
+        BallotNumber nextHeard = nextBallotNumber ledger
     in ledger {
-      lastProposedBallotNumber = 1 + max lastProposed nextHeard
+      lastProposedBallotNumber = BallotNumber $ 1 + max lastProposed nextHeard
       }
   nextProposedBallotNumber p
 
-nextProposedBallotNumber :: Paxos d -> STM Integer
+nextProposedBallotNumber :: Paxos d -> STM BallotNumber
 nextProposedBallotNumber p = do
   ledger <- readTVar $ paxosLedger p
   return $ lastProposedBallotNumber ledger
@@ -218,7 +219,7 @@ setLastVote p vote = do
   modifyTVar vLedger $ \ledger -> ledger { lastVote = Just vote}
   return vote
 
-setNextBallotNumber :: Paxos d -> Integer -> STM ()
+setNextBallotNumber :: Paxos d -> BallotNumber -> STM ()
 setNextBallotNumber p newNextBallotNumber = do
   let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger ->
@@ -237,9 +238,9 @@ isMajority :: Paxos d -> M.Map Name (Maybe v) -> (v -> Bool)-> Bool
 isMajority p votes test =
   let actualVotes = filter isJust $ M.elems votes
       countedVotes = filter (\(Just v) -> test v) actualVotes
-  in (toInteger . length) countedVotes >= (toInteger . M.size $ paxosMembers p) `quot` 2
+  in (toInteger . length) countedVotes >= (toInteger . S.size $ paxosMembers p) `quot` 2
 
-maxBallotNumber :: Paxos d -> Votes d -> STM Integer
+maxBallotNumber :: Paxos d -> Votes d -> STM BallotNumber
 maxBallotNumber p votes = do
   let vLedger = paxosLedger p
   ledger <- readTVar vLedger
@@ -262,5 +263,5 @@ will be a response for every `Member`, even if it's just `Nothing`.
 pcall :: (Decreeable d,Serialize a,Serialize r) => Paxos d -> String -> a -> IO (M.Map Name (Maybe r))
 pcall p method args = do
   let cs = newCallSite (paxosEndpoint p) (paxosName p)
-      members = M.keys $ paxosMembers p
+      members = S.elems $ paxosMembers p
   gcallWithTimeout cs members method (fromInteger $ paxosTimeout p) args
