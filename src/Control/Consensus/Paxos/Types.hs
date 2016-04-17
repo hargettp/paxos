@@ -16,7 +16,7 @@
 
 module Control.Consensus.Paxos.Types (
 
-  Paxos(..),
+  Member(..),
   Ledger(..),
   Vote(..),
   Votes(..),
@@ -47,7 +47,7 @@ import Network.Endpoints
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data Paxos d = Paxos {
+data Member d = Paxos {
   -- common fields
   paxosEndpoint :: Endpoint,
   paxosName :: Name,
