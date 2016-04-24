@@ -66,7 +66,7 @@ data Ledger d = Ledger {
   -- | The last proposal made by this member
   lastProposedBallotNumber :: BallotNumber, -- ^ this is lastTried[p]
   -- member fields
-  nextBallotNumber:: BallotNumber, -- ^ this is nextBal[q]
+  nextExpectedBallotNumber:: BallotNumber, -- ^ this is nextBal[q]
   lastVote :: Maybe (Vote d) -- ^ this is prevVote[q]
 }
 

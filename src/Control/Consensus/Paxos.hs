@@ -89,7 +89,7 @@ preparation p = do
   votes <- prepare p prep
   atomically $ do
     ballotNumber <- maxBallotNumber p votes
-    setNextBallotNumber p ballotNumber
+    setNextExpectedBallotNumber p ballotNumber
   return votes
 
 chooseDecree :: (Decreeable d) => Member d -> Decree d -> Votes d -> Maybe (Decree d)
@@ -120,7 +120,7 @@ proposition p d = do
   votes <- propose p proposal
   atomically $ do
     ballotNumber <- maxBallotNumber p votes
-    setNextBallotNumber p ballotNumber
+    setNextExpectedBallotNumber p ballotNumber
   return $ isMajority p votes $ \vote ->
     case vote of
       Vote {} ->
@@ -158,15 +158,15 @@ onPrepare p prep = atomically $ do
   let preparedBallotNumber = tentativeBallotNumber prep
       vLedger = paxosLedger p
   ledger <- readTVar vLedger
-  let ballotNumber = nextBallotNumber ledger
+  let ballotNumber = nextExpectedBallotNumber ledger
   if preparedBallotNumber > ballotNumber
     then do
-      modifyTVar vLedger $ \ledger -> ledger {nextBallotNumber = preparedBallotNumber}
+      modifyTVar vLedger $ \ledger -> ledger {nextExpectedBallotNumber = preparedBallotNumber}
       case lastVote ledger of
         Just vote -> return vote
         Nothing -> return Assent
     else do
-      modifyTVar vLedger $ \ledger -> ledger {nextBallotNumber = preparedBallotNumber}
+      modifyTVar vLedger $ \ledger -> ledger {nextExpectedBallotNumber = preparedBallotNumber}
       return Dissent {
         dissentInstanceId = paxosInstanceId p,
         dissentBallotNumber = ballotNumber
@@ -204,9 +204,9 @@ incrementNextProposedBallotNumber m = do
   let vLedger = paxosLedger m
   modifyTVar vLedger $ \ledger ->
     let BallotNumber lastProposed = lastProposedBallotNumber ledger
-        BallotNumber nextHeard = nextBallotNumber ledger
+        BallotNumber nextExpected = nextExpectedBallotNumber ledger
     in ledger {
-      lastProposedBallotNumber = BallotNumber $ 1 + max lastProposed nextHeard
+      lastProposedBallotNumber = BallotNumber $ 1 + max lastProposed nextExpected
       }
   nextProposedBallotNumber m
 
@@ -222,12 +222,12 @@ setLastVote p vote = do
   modifyTVar vLedger $ \ledger -> ledger { lastVote = Just vote}
   return vote
 
-setNextBallotNumber :: Member d -> BallotNumber -> STM ()
-setNextBallotNumber p newNextBallotNumber = do
+setNextExpectedBallotNumber :: Member d -> BallotNumber -> STM ()
+setNextExpectedBallotNumber p nextBallotNumber = do
   let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger ->
-    let ballotNumber = nextBallotNumber ledger
-    in ledger {nextBallotNumber = max ballotNumber newNextBallotNumber}
+    let nextExpected = nextExpectedBallotNumber ledger
+    in ledger {nextExpectedBallotNumber = max nextExpected nextBallotNumber}
 
 --
 -- Utility
@@ -245,10 +245,9 @@ isMajority p votes test =
 
 maxBallotNumber :: Member d -> Votes d -> STM BallotNumber
 maxBallotNumber p votes = do
-  let vLedger = paxosLedger p
-  ledger <- readTVar vLedger
+  ledger <- readTVar $ paxosLedger p
   let maxVote = maximum votes
-      ballotNumber = nextBallotNumber ledger
+      ballotNumber = nextExpectedBallotNumber ledger
   return $ case maxVote of
     Just vote -> case vote of
       Dissent{} -> max (dissentBallotNumber vote) ballotNumber
@@ -257,7 +256,7 @@ maxBallotNumber p votes = do
     Nothing -> ballotNumber
 
   -- return $ foldr (\vote maxSoFar -> maximum maxSoFar (voteBallotNumber vote ))
-  --   (nextBallotNumber ledger) M.elems votes
+  --   (nextExpectedBallotNumber ledger) M.elems votes
 
 {-|
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
