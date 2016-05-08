@@ -27,10 +27,14 @@ library
                       cereal,
                       containers,
                       courier,
+                      random,
                       stm
 
   hs-source-dirs:      src
   default-language:    Haskell2010
+  ghc-options:
+    -Wall
+    -threaded
 
 Test-Suite test-paxos
     type: exitcode-stdio-1.0

@@ -19,11 +19,11 @@ module Control.Consensus.Paxos.Types (
   Member(..),
   Ledger(..),
   Vote(..),
-  Votes(..),
+  Votes,
   Prepare(..),
   Proposal(..),
   Decree(..),
-  Decreeable(..),
+  Decreeable,
   BallotNumber(..),
   InstanceId(..),
   MemberId(..)
@@ -36,7 +36,6 @@ module Control.Consensus.Paxos.Types (
 
 import Control.Concurrent.STM
 import qualified Data.Map as M
-import Data.Maybe
 import Data.Serialize
 import qualified Data.Set as S
 
@@ -47,8 +46,7 @@ import Network.Endpoints
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data Member d = Paxos {
-  -- common fields
+data Member d = Member {
   paxosEndpoint :: Endpoint,
   paxosName :: Name,
   paxosMemberId :: MemberId,

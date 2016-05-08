@@ -18,6 +18,12 @@ module Control.Consensus.Paxos (
   leadBasicPaxosInstance,
   leadBasicPaxosRound,
 
+  onPrepare,
+  onPropose,
+  onAccept,
+
+  mkMemberId,
+
   module Control.Consensus.Paxos.Types
 
 ) where
@@ -36,6 +42,8 @@ import qualified Data.Set as S
 
 import Network.Endpoints
 import Network.RPC.Typed
+
+import qualified System.Random as R
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -81,10 +89,10 @@ leadBasicPaxosRound p d = do
 
 preparation :: (Decreeable d) => Member d -> IO (Votes d)
 preparation p = do
-  proposedBallotNumber <- atomically $ incrementNextProposedBallotNumber p
+  proposed <- atomically $ incrementNextProposedBallotNumber p
   let prep = Prepare {
         prepareInstanceId = paxosInstanceId p,
-        tentativeBallotNumber = proposedBallotNumber
+        tentativeBallotNumber = proposed
         }
   votes <- prepare p prep
   atomically $ do
@@ -111,10 +119,10 @@ chooseDecree p decree votes =
 
 proposition :: (Decreeable d) => Member d -> Decree d -> IO Bool
 proposition p d = do
-  proposedBallotNumber <- atomically $ nextProposedBallotNumber p
+  proposed <- atomically $ nextProposedBallotNumber p
   let proposal = Proposal {
     proposalInstanceId = paxosInstanceId p,
-    proposedBallotNumber = proposedBallotNumber,
+    proposedBallotNumber = proposed,
     proposedDecree = d
   }
   votes <- propose p proposal
@@ -124,7 +132,7 @@ proposition p d = do
   return $ isMajority p votes $ \vote ->
     case vote of
       Vote {} ->
-        (voteBallotNumber vote == proposedBallotNumber) &&
+        (voteBallotNumber vote == proposed) &&
          (voteInstanceId vote == paxosInstanceId p)
       Assent -> True
       Dissent {} -> False
@@ -161,12 +169,12 @@ onPrepare p prep = atomically $ do
   let ballotNumber = nextExpectedBallotNumber ledger
   if preparedBallotNumber > ballotNumber
     then do
-      modifyTVar vLedger $ \ledger -> ledger {nextExpectedBallotNumber = preparedBallotNumber}
+      modifyTVar vLedger $ \oldLedger -> oldLedger {nextExpectedBallotNumber = preparedBallotNumber}
       case lastVote ledger of
         Just vote -> return vote
         Nothing -> return Assent
     else do
-      modifyTVar vLedger $ \ledger -> ledger {nextExpectedBallotNumber = preparedBallotNumber}
+      modifyTVar vLedger $ \oldLedger -> oldLedger {nextExpectedBallotNumber = preparedBallotNumber}
       return Dissent {
         dissentInstanceId = paxosInstanceId p,
         dissentBallotNumber = ballotNumber
@@ -193,7 +201,7 @@ onPropose p prop = atomically $ do
         }
 
 onAccept :: (Decreeable d) => Member d -> Decree d -> IO d
-onAccept p d = return $ decreeable d
+onAccept _ d = return $ decreeable d
 
 ---
 --- Ledger functions
@@ -215,12 +223,10 @@ nextProposedBallotNumber m = do
   ledger <- readTVar $ paxosLedger m
   return $ lastProposedBallotNumber ledger
 
-setLastVote :: Member d -> Vote d-> STM (Vote d)
+setLastVote :: Member d -> Vote d-> STM ()
 setLastVote p vote = do
-  ballotNumber <- nextProposedBallotNumber p
   let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger -> ledger { lastVote = Just vote}
-  return vote
 
 setNextExpectedBallotNumber :: Member d -> BallotNumber -> STM ()
 setNextExpectedBallotNumber p nextBallotNumber = do
@@ -228,6 +234,13 @@ setNextExpectedBallotNumber p nextBallotNumber = do
   modifyTVar vLedger $ \ledger ->
     let nextExpected = nextExpectedBallotNumber ledger
     in ledger {nextExpectedBallotNumber = max nextExpected nextBallotNumber}
+
+--
+-- Factories
+--
+
+mkMemberId :: IO MemberId
+mkMemberId = fmap MemberId R.randomIO
 
 --
 -- Utility
