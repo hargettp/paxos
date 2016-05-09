@@ -20,6 +20,7 @@ module Control.Consensus.Paxos.Types (
   Ledger(..),
   Vote(..),
   Votes,
+  Proposer(..),
   Prepare(..),
   Proposal(..),
   Decree(..),
@@ -41,16 +42,12 @@ import qualified Data.Set as S
 
 import GHC.Generics
 
-import Network.Endpoints
-
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
 data Member d = Member {
-  paxosEndpoint :: Endpoint,
-  paxosName :: Name,
   paxosMemberId :: MemberId,
-  paxosMembers :: S.Set Name,
+  paxosMembers :: S.Set MemberId,
   paxosTimeout :: Integer,
   paxosInstanceId :: InstanceId,
   paxosLedger :: TVar (Ledger d)
@@ -66,6 +63,12 @@ data Ledger d = Ledger {
   -- member fields
   nextExpectedBallotNumber:: BallotNumber, -- ^ this is nextBal[q]
   lastVote :: Maybe (Vote d) -- ^ this is prevVote[q]
+}
+
+data Proposer d = (Decreeable d) => Proposer {
+  prepare :: Member d -> Prepare -> IO (Votes d),
+  propose :: Member d -> Proposal d-> IO (Votes d),
+  accept :: Member d -> Decree d -> IO (M.Map MemberId (Maybe Bool))
 }
 
 {-|
@@ -100,7 +103,7 @@ instance Ord (Vote d) where
   _ <= Assent = False
   a <= b = voteBallotNumber a <= voteBallotNumber b
 
-type Votes d = M.Map Name (Maybe (Vote d))
+type Votes d = M.Map MemberId (Maybe (Vote d))
 
 instance (Decreeable d) => Serialize (Vote d)
 
