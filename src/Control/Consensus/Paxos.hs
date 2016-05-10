@@ -16,7 +16,7 @@
 module Control.Consensus.Paxos (
 
   leadBasicPaxosInstance,
-  leadBasicPaxosRound,
+  leadBasicPaxosBallot,
 
   onPrepare,
   onPropose,
@@ -56,7 +56,7 @@ leadBasicPaxosInstance p m d = do
         decreeMemberId = memberId,
         decreeable = d
       }
-  maybeDecree <- leadBasicPaxosRound p m decree
+  maybeDecree <- leadBasicPaxosBallot p m decree
   case maybeDecree of
     -- if this decree is accepted, we are done
     Just c | decreeMemberId c == memberId -> return $ Just c
@@ -71,8 +71,8 @@ Lead one round of voting, with one of 3 possible outcomes:
 * No decree is accepted
 
 -}
-leadBasicPaxosRound :: (Decreeable d) => Proposer d -> Member d -> Decree d -> IO (Maybe (Decree d))
-leadBasicPaxosRound p m d = do
+leadBasicPaxosBallot :: (Decreeable d) => Proposer d -> Member d -> Decree d -> IO (Maybe (Decree d))
+leadBasicPaxosBallot p m d = do
   earlierVotes <- preparation p m
   let maybeChosenDecree = chooseDecree m d earlierVotes
   case maybeChosenDecree of
