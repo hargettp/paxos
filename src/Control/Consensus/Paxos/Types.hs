@@ -110,6 +110,7 @@ instance (Decreeable d) => Serialize (Vote d)
 class (Generic d, Serialize d) => Decreeable d
 
 data Decree d = (Decreeable d) => Decree {
+  decreeInstanceId :: InstanceId,
   -- the member from which this decree originated
   decreeMemberId :: MemberId,
   decreeable :: d
@@ -117,12 +118,15 @@ data Decree d = (Decreeable d) => Decree {
 
 instance (Decreeable d) => Serialize (Decree d) where
   put d = do
+    put $ decreeInstanceId d
     put $ decreeMemberId d
     put $ decreeable d
   get = do
+    instanceId <- get
     memberId <- get
     decree <- get
     return Decree {
+      decreeInstanceId = instanceId,
       decreeMemberId = memberId,
       decreeable = decree
       }

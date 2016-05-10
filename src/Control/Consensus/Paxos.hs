@@ -53,6 +53,7 @@ leadBasicPaxosInstance :: (Decreeable d) => Proposer d -> Member d -> d -> IO (M
 leadBasicPaxosInstance p m d = do
   let memberId = paxosMemberId m
       decree = Decree {
+        decreeInstanceId = paxosInstanceId m,
         decreeMemberId = memberId,
         decreeable = d
       }
