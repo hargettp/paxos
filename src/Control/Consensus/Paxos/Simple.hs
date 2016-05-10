@@ -46,6 +46,6 @@ mcall members fn member arg = do
   where
     call memberId = case M.lookup memberId members of
       Nothing -> return (memberId,Nothing)
-      Just acceptor -> do
-        result <- fn acceptor arg
+      Just otherMember -> do
+        result <- fn otherMember arg
         return (memberId, Just result)

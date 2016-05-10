@@ -45,7 +45,7 @@ import qualified System.Random as R
 --------------------------------------------------------------------------------
 
 {-|
-Continue inititiating rounds of Paxos until the decree is finally accepted.
+Continue inititiating ballots with Paxos until the decree is finally accepted.
 
 This will guarantee the decree is eventually accepted, provided the caller doesn't crash.
 -}
@@ -65,12 +65,11 @@ leadBasicPaxosInstance p m d = do
     _ -> leadBasicPaxosInstance p m d
 
 {-|
-Lead one round of voting, with one of 3 possible outcomes:
+Lead one ballot of voting, with one of 3 possible outcomes:
 
 * The proposed decree is accepted
 * Another decree proposed by another `Member` is accepted
 * No decree is accepted
-
 -}
 leadBasicPaxosBallot :: (Decreeable d) => Proposer d -> Member d -> Decree d -> IO (Maybe (Decree d))
 leadBasicPaxosBallot p m d = do

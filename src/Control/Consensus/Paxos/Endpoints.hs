@@ -36,6 +36,28 @@ import Network.RPC.Typed
 
 type MemberNames = M.Map MemberId Name
 
+mkProposer :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Proposer d
+mkProposer endpoint members name = Proposer {
+  prepare = pcall endpoint members name "prepare",
+  propose = pcall endpoint members name "propose",
+  accept = pcall endpoint members name "accept"
+}
+
+{-|
+Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
+will be a response for every `Member`, even if it's just `Nothing`.
+-}
+pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Member d -> a -> IO (M.Map MemberId (Maybe r))
+pcall endpoint memberNames name method m args = do
+  let cs = newCallSite endpoint name
+      members = lookupMany (S.elems $ paxosMembers m) memberNames
+      names = M.elems members
+  responses <- gcallWithTimeout cs names method (fromInteger pcallTimeout) args
+  return $ composeMaps members responses
+
+pcallTimeout :: Integer
+pcallTimeout = 150
+
 {-|
 Given a list of keys and a `M.Map` of keys to values,
 return a new `M.Map` that only has keys from the original list
@@ -61,25 +83,3 @@ composeMaps m1 m2 = M.fromList
   . filter (\(_,maybeValue) -> isJust maybeValue)
   . map (\(key1,key2) -> (key1,M.lookup key2 m2))
   $ M.toList m1
-
-mkProposer :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Proposer d
-mkProposer endpoint members name = Proposer {
-  prepare = pcall endpoint members name "prepare",
-  propose = pcall endpoint members name "propose",
-  accept = pcall endpoint members name "accept"
-}
-
-{-|
-Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
-will be a response for every `Member`, even if it's just `Nothing`.
--}
-pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Member d -> a -> IO (M.Map MemberId (Maybe r))
-pcall endpoint memberNames name method m args = do
-  let cs = newCallSite endpoint name
-      members = lookupMany (S.toList $ paxosMembers m) memberNames
-      names = M.elems members
-  responses <- gcallWithTimeout cs names method (fromInteger pcallTimeout) args
-  return $ composeMaps members responses
-
-pcallTimeout :: Integer
-pcallTimeout = 150
