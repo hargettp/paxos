@@ -19,13 +19,14 @@ module Control.Consensus.Paxos.Endpoints (
 ) where
 
 -- local imports
-import Control.Consensus.Paxos.Types
+import Control.Consensus.Paxos
 
 -- external imports
 
 import qualified Data.Map as M
-import Data.Maybe (fromJust)
+import Data.Maybe (isJust)
 import Data.Serialize
+import qualified Data.Set as S
 
 import Network.Endpoints
 import Network.RPC.Typed
@@ -33,7 +34,33 @@ import Network.RPC.Typed
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-type MemberNames = M.Map Name MemberId
+type MemberNames = M.Map MemberId Name
+
+{-|
+Given a list of keys and a `M.Map` of keys to values,
+return a new `M.Map` that only has keys from the original list
+and where the original map has a value for the key. This is quick way
+of looking up a bunch of keys at once and getting a (possibly empty)
+map with the results.
+-}
+lookupMany :: (Ord k) => [k] -> M.Map k v -> M.Map k v
+lookupMany keys aMap = M.fromList
+  . map (\(key,Just value) -> (key,value))
+  . filter (\(_,maybeValue) -> isJust maybeValue)
+  $ map (\key -> (key,M.lookup key aMap)) keys
+
+
+{-|
+Compose 2 `M.Map`s: for each key in map 1, use the associated value for the key in map 1
+as a key to find a value in map 2. Return a map with only keys from map 1 such that a value was found
+in map 2 the value for that key in map 1.
+-}
+composeMaps :: (Ord k1, Ord k2) => M.Map k1 k2 -> M.Map k2 v -> M.Map k1 v
+composeMaps m1 m2 = M.fromList
+  . map (\(key,Just value) -> (key,value))
+  . filter (\(_,maybeValue) -> isJust maybeValue)
+  . map (\(key1,key2) -> (key1,M.lookup key2 m2))
+  $ M.toList m1
 
 mkProposer :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Proposer d
 mkProposer endpoint members name = Proposer {
@@ -47,8 +74,12 @@ Invoke a method on members of the Paxos instance. Because of the semantics of `g
 will be a response for every `Member`, even if it's just `Nothing`.
 -}
 pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Member d -> a -> IO (M.Map MemberId (Maybe r))
-pcall endpoint names name method m args = do
+pcall endpoint memberNames name method m args = do
   let cs = newCallSite endpoint name
-      members = M.keys names
-  responses <- gcallWithTimeout cs members method (fromInteger $ paxosTimeout m) args
-  return $ M.mapKeys (\n -> fromJust $ M.lookup n names) responses
+      members = lookupMany (S.toList $ paxosMembers m) memberNames
+      names = M.elems members
+  responses <- gcallWithTimeout cs names method (fromInteger pcallTimeout) args
+  return $ composeMaps members responses
+
+pcallTimeout :: Integer
+pcallTimeout = 150

@@ -46,11 +46,11 @@ import GHC.Generics
 --------------------------------------------------------------------------------
 
 data Member d = Member {
-  paxosMemberId :: MemberId,
-  paxosMembers :: S.Set MemberId,
-  paxosTimeout :: Integer,
   paxosInstanceId :: InstanceId,
-  paxosLedger :: TVar (Ledger d)
+  paxosMembers :: S.Set MemberId,
+  paxosMemberId :: MemberId,
+  paxosLedger :: TVar (Ledger d),
+  acceptDecree :: d -> IO Bool
 }
 
 {-|

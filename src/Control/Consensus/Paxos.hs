@@ -185,8 +185,8 @@ onPropose p prop = atomically $ do
           dissentBallotNumber = ballotNumber
         }
 
-onAccept :: (Decreeable d) => Member d -> Decree d -> IO d
-onAccept _ d = return $ decreeable d
+onAccept :: (Decreeable d) => Member d -> Decree d -> IO Bool
+onAccept member d = acceptDecree member $ decreeable d
 
 ---
 --- Ledger functions
