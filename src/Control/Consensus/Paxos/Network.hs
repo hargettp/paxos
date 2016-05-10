@@ -1,6 +1,6 @@
 -----------------------------------------------------------------------------
 -- |
--- Module      :  Control.Consensus.Paxos.Endpoints
+-- Module      :  Control.Consensus.Paxos.Network
 -- Copyright   :  (c) Phil Hargett 2016
 -- License     :  MIT (see LICENSE file)
 --
@@ -11,7 +11,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Control.Consensus.Paxos.Endpoints (
+module Control.Consensus.Paxos.Network (
 
   MemberNames,
   mkProposer
