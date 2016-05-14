@@ -1,3 +1,6 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Network.RPC.Typed
@@ -17,7 +20,8 @@ module Network.RPC.Typed (
 
   call,
   gcallWithTimeout,
---   hearAll,
+  hear,
+  typedMethodSelector
 
 ) where
 
@@ -56,3 +60,22 @@ decodeResponses = M.map decodeResponse
       Just msg -> case decode msg of
         Left _ -> Nothing
         Right response -> Just response
+
+hear :: (Serialize a, Serialize r) => Endpoint -> Name -> R.Method -> IO (a,R.Reply r)
+hear endpoint name method = do
+  (caller,rid,args) <- selectMessage endpoint $ typedMethodSelector method
+  return (args, reply caller rid)
+  where
+    reply caller rid result =
+      sendMessage endpoint caller $ encode $ R.Response rid name $ encode result
+
+typedMethodSelector :: (Serialize a) => R.Method -> Message -> Maybe (Name,R.RequestId,a)
+typedMethodSelector method msg =
+  case decode msg of
+    Left _ -> Nothing
+    Right (R.Request rid caller rmethod bytes) ->
+      if rmethod == method
+        then case decode bytes of
+          Left _ -> Nothing
+          Right args -> Just (caller,rid,args)
+        else Nothing
