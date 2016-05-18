@@ -132,7 +132,7 @@ instance (Decreeable d) => Serialize (Decree d) where
       }
 
 {-|
-Eq. BeginBallot in basic protocolx
+Eq. BeginBallot in basic protocol
 -}
 data Proposal d =  Proposal {
   proposalInstanceId :: InstanceId,

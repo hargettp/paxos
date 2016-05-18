@@ -21,7 +21,9 @@ module Network.RPC.Typed (
   call,
   gcallWithTimeout,
   hear,
-  typedMethodSelector
+  typedMethodSelector,
+
+  R.Method
 
 ) where
 

@@ -1,27 +1,29 @@
 -----------------------------------------------------------------------------
 -- |
--- Module      :  Control.Consensus.Paxos.Network
+-- Module      :  Control.Consensus.Paxos.Network.Server
 -- Copyright   :  (c) Phil Hargett 2016
 -- License     :  MIT (see LICENSE file)
 --
 -- Maintainer  :  phil@haphazardhouse.net
--- Stability   :  Experimental
--- Portability :  Non-portable (uses STM)
+-- Stability   :  $(Stability)
+-- Portability :  $(Portability)
 --
 --
 -----------------------------------------------------------------------------
 
-module Control.Consensus.Paxos.Network (
+module Control.Consensus.Paxos.Network.Server (
 
-  MemberNames,
-  mkProposer
+MemberNames,
+mkProposer
 
 ) where
 
 -- local imports
-import Control.Consensus.Paxos
 
 -- external imports
+
+import Control.Consensus.Paxos.Types
+import Control.Concurrent.Async
 
 import qualified Data.Map as M
 import Data.Maybe (isJust)
@@ -58,6 +60,10 @@ pcall endpoint memberNames name method m args = do
 pcallTimeout :: Integer
 pcallTimeout = 150
 
+-------------------------------------------------------------------------------
+-- Utility
+-------------------------------------------------------------------------------
+
 {-|
 Given a list of keys and a `M.Map` of keys to values,
 return a new `M.Map` that only has keys from the original list
@@ -83,3 +89,12 @@ composeMaps m1 m2 = M.fromList
   . filter (\(_,maybeValue) -> isJust maybeValue)
   . map (\(key1,key2) -> (key1,M.lookup key2 m2))
   $ M.toList m1
+
+{-|
+Run a group of functions using `withAsync` such that when the inner function exits, they all exit.
+!-}
+withAll :: [IO a] -> IO b -> IO b
+withAll [] _ = return undefined
+withAll [f] fn = withAsync f $ const fn
+withAll (f:fs) fn =
+  withAsync f $ \_ -> withAll fs fn
