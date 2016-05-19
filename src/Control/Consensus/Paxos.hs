@@ -49,7 +49,7 @@ Continue inititiating ballots with Paxos until the decree is finally accepted.
 
 This will guarantee the decree is eventually accepted, provided the caller doesn't crash.
 -}
-leadBasicPaxosInstance :: (Decreeable d) => Proposer d -> Member d -> d -> IO (Maybe (Decree d))
+leadBasicPaxosInstance :: (Decreeable d) => Proposer d -> Paxos d -> d -> IO (Paxos d,Maybe (Decree d))
 leadBasicPaxosInstance p m d = do
   let memberId = paxosMemberId m
       decree = Decree {
@@ -57,10 +57,10 @@ leadBasicPaxosInstance p m d = do
         decreeMemberId = memberId,
         decreeable = d
       }
-  maybeDecree <- leadBasicPaxosBallot p m decree
+  (m1,maybeDecree) <- leadBasicPaxosBallot p m decree
   case maybeDecree of
     -- if this decree is accepted, we are done
-    Just c | decreeMemberId c == memberId -> return $ Just c
+    Just c | decreeMemberId c == memberId -> return (m1,Just c)
     -- if the response is Nothing or another decree, keep trying
     _ -> leadBasicPaxosInstance p m d
 
@@ -71,19 +71,19 @@ Lead one ballot of voting, with one of 3 possible outcomes:
 * Another decree proposed by another `Member` is accepted
 * No decree is accepted
 -}
-leadBasicPaxosBallot :: (Decreeable d) => Proposer d -> Member d -> Decree d -> IO (Maybe (Decree d))
+leadBasicPaxosBallot :: (Decreeable d) => Proposer d -> Paxos d -> Decree d -> IO (Paxos d, Maybe (Decree d))
 leadBasicPaxosBallot p m d = do
-  earlierVotes <- preparation p m
-  let maybeChosenDecree = chooseDecree m d earlierVotes
+  (m1,earlierVotes) <- preparation p m
+  let maybeChosenDecree = chooseDecree (paxosMembers m1) d earlierVotes
   case maybeChosenDecree of
-    Nothing -> return Nothing
+    Nothing -> return (m1,Nothing)
     Just chosenDecree -> do
-      promised <- proposition p m d
+      (m2,promised) <- proposition p m1 d
       if promised
         then acceptance p m chosenDecree
-        else return Nothing
+        else return (m2,Nothing)
 
-preparation :: (Decreeable d) => Proposer d -> Member d -> IO (Votes d)
+preparation :: (Decreeable d) => Proposer d -> Paxos d -> IO (Paxos d,Votes d)
 preparation p m = do
   proposed <- atomically $ incrementNextProposedBallotNumber m
   let prep = Prepare {
@@ -94,11 +94,11 @@ preparation p m = do
   atomically $ do
     ballotNumber <- maxBallotNumber m votes
     setNextExpectedBallotNumber m ballotNumber
-  return votes
+  return (m,votes)
 
-chooseDecree :: (Decreeable d) => Member d -> Decree d -> Votes d -> Maybe (Decree d)
-chooseDecree p decree votes =
-  if isMajority p votes $ \vote ->
+chooseDecree :: (Decreeable d) => Members -> Decree d -> Votes d -> Maybe (Decree d)
+chooseDecree members decree votes =
+  if isMajority members votes $ \vote ->
     case vote of
       Dissent{} -> False
       _ -> True
@@ -113,7 +113,7 @@ chooseDecree p decree votes =
       -- pick the latest one from earlier
       Just vote -> Just $ voteDecree vote
 
-proposition :: (Decreeable d) => Proposer d -> Member d -> Decree d -> IO Bool
+proposition :: (Decreeable d) => Proposer d -> Paxos d -> Decree d -> IO (Paxos d,Bool)
 proposition p m d = do
   proposed <- atomically $ nextProposedBallotNumber m
   let proposal = Proposal {
@@ -125,20 +125,21 @@ proposition p m d = do
   atomically $ do
     ballotNumber <- maxBallotNumber m votes
     setNextExpectedBallotNumber m ballotNumber
-  return $ isMajority m votes $ \vote ->
-    case vote of
-      Vote {} ->
-        (voteBallotNumber vote == proposed) &&
-         (voteInstanceId vote == paxosInstanceId m)
-      Assent -> True
-      Dissent {} -> False
+  let success = isMajority (paxosMembers m) votes $ \vote ->
+        case vote of
+          Vote {} ->
+            (voteBallotNumber vote == proposed) &&
+             (voteInstanceId vote == paxosInstanceId m)
+          Assent -> True
+          Dissent {} -> False
+  return (m,success)
 
-acceptance :: (Decreeable d) => Proposer d -> Member d -> Decree d -> IO (Maybe (Decree d))
+acceptance :: (Decreeable d) => Proposer d -> Paxos d -> Decree d -> IO (Paxos d,Maybe (Decree d))
 acceptance p m d = do
   responses <- accept p m d
-  if isMajority m responses id
-    then return $ Just d
-    else return Nothing
+  if isMajority (paxosMembers m) responses id
+    then return (m,Just d)
+    else return (m,Nothing)
 
 --
 -- Actual protocol
@@ -147,27 +148,27 @@ acceptance p m d = do
 -- callee
 
 onPrepare :: (Decreeable d) => Preparation d
-onPrepare p prep = atomically $ do
+onPrepare member prep = atomically $ do
   let preparedBallotNumber = tentativeBallotNumber prep
-      vLedger = paxosLedger p
+      vLedger = paxosLedger member
   ledger <- readTVar vLedger
   let ballotNumber = nextExpectedBallotNumber ledger
   if preparedBallotNumber > ballotNumber
     then do
       modifyTVar vLedger $ \oldLedger -> oldLedger {nextExpectedBallotNumber = preparedBallotNumber}
       case lastVote ledger of
-        Just vote -> return vote
-        Nothing -> return Assent
+        Just vote -> return (member,vote)
+        Nothing -> return (member,Assent)
     else do
       modifyTVar vLedger $ \oldLedger -> oldLedger {nextExpectedBallotNumber = preparedBallotNumber}
-      return Dissent {
-        dissentInstanceId = paxosInstanceId p,
+      return (member,Dissent {
+        dissentInstanceId = paxosInstanceId member,
         dissentBallotNumber = ballotNumber
-      }
+      })
 
 onPropose :: (Decreeable d) => Proposition d
-onPropose p prop = atomically $ do
-  ballotNumber <- nextProposedBallotNumber p
+onPropose member prop = atomically $ do
+  ballotNumber <- nextProposedBallotNumber member
   if ballotNumber == proposedBallotNumber prop
     then do
       let instanceId = proposalInstanceId prop
@@ -177,22 +178,24 @@ onPropose p prop = atomically $ do
             voteBallotNumber = ballotNumber,
             voteDecree = decree
           }
-      setLastVote p vote
-      return vote
+      setLastVote member vote
+      return (member,vote)
     else
-      return Dissent {
+      return (member,Dissent {
           dissentInstanceId = proposalInstanceId prop,
           dissentBallotNumber = ballotNumber
-        }
+        })
 
 onAccept :: (Decreeable d) => Acceptance d
-onAccept member d = acceptDecree member $ decreeable d
+onAccept member d = do
+  success <- acceptDecree member $ decreeable d
+  return (member,success)
 
 ---
 --- Ledger functions
 ---
 
-incrementNextProposedBallotNumber :: Member d -> STM BallotNumber
+incrementNextProposedBallotNumber :: Paxos d -> STM BallotNumber
 incrementNextProposedBallotNumber m = do
   let vLedger = paxosLedger m
   modifyTVar vLedger $ \ledger ->
@@ -203,17 +206,17 @@ incrementNextProposedBallotNumber m = do
       }
   nextProposedBallotNumber m
 
-nextProposedBallotNumber :: Member d -> STM BallotNumber
+nextProposedBallotNumber :: Paxos d -> STM BallotNumber
 nextProposedBallotNumber m = do
   ledger <- readTVar $ paxosLedger m
   return $ lastProposedBallotNumber ledger
 
-setLastVote :: Member d -> Vote d-> STM ()
+setLastVote :: Paxos d -> Vote d-> STM ()
 setLastVote p vote = do
   let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger -> ledger { lastVote = Just vote}
 
-setNextExpectedBallotNumber :: Member d -> BallotNumber -> STM ()
+setNextExpectedBallotNumber :: Paxos d -> BallotNumber -> STM ()
 setNextExpectedBallotNumber p nextBallotNumber = do
   let vLedger = paxosLedger p
   modifyTVar vLedger $ \ledger ->
@@ -235,13 +238,13 @@ mkMemberId = fmap MemberId R.randomIO
 Return true if there are enough responses that are not Nothing and which pass
 the supplied test.
 -}
-isMajority :: Member d -> M.Map MemberId (Maybe v) -> (v -> Bool)-> Bool
-isMajority p votes test =
+isMajority :: Members -> M.Map MemberId (Maybe v) -> (v -> Bool)-> Bool
+isMajority members votes test =
   let actualVotes = filter isJust $ M.elems votes
       countedVotes = filter (\(Just v) -> test v) actualVotes
-  in (toInteger . length) countedVotes >= (toInteger . S.size $ paxosMembers p) `quot` 2
+  in (toInteger . length) countedVotes >= (toInteger . S.size $ members) `quot` 2
 
-maxBallotNumber :: Member d -> Votes d -> STM BallotNumber
+maxBallotNumber :: Paxos d -> Votes d -> STM BallotNumber
 maxBallotNumber p votes = do
   ledger <- readTVar $ paxosLedger p
   let maxVote = maximum votes

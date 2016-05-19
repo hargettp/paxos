@@ -30,7 +30,7 @@ import qualified Data.Set as S
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-type Members d = M.Map MemberId (Member d)
+type Members d = M.Map MemberId (Paxos d)
 
 mkProposer :: (Decreeable d) => Members d -> Proposer d
 mkProposer members = Proposer {
@@ -39,7 +39,7 @@ mkProposer members = Proposer {
   accept = mcall members onAccept
 }
 
-mcall :: (Serialize a,Serialize r) => Members d -> (Member d -> a -> IO r) -> Member d -> a -> IO (M.Map MemberId (Maybe r))
+mcall :: (Serialize a,Serialize r) => Members d -> (Paxos d -> a -> IO r) -> Paxos d -> a -> IO (M.Map MemberId (Maybe r))
 mcall members fn member arg = do
   results <- mapM call $ S.elems $ paxosMembers member
   return $ M.fromList results

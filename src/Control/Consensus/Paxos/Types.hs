@@ -16,7 +16,8 @@
 
 module Control.Consensus.Paxos.Types (
 
-  Member(..),
+  Paxos(..),
+  Members(),
   Ledger(..),
   Vote(..),
   Votes,
@@ -49,13 +50,15 @@ import GHC.Generics
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data Member d = Member {
+data Paxos d = Member {
   paxosInstanceId :: InstanceId,
-  paxosMembers :: S.Set MemberId,
+  paxosMembers :: Members,
   paxosMemberId :: MemberId,
   paxosLedger :: TVar (Ledger d),
   acceptDecree :: d -> IO Bool
 }
+
+type Members = S.Set MemberId
 
 {-|
 Central state for an instance of the Paxos algorithm.
@@ -70,9 +73,9 @@ data Ledger d = Ledger {
 }
 
 data Proposer d = (Decreeable d) => Proposer {
-  prepare :: Member d -> Prepare -> IO (Votes d),
-  propose :: Member d -> Proposal d-> IO (Votes d),
-  accept :: Member d -> Decree d -> IO (M.Map MemberId (Maybe Bool))
+  prepare :: Paxos d -> Prepare -> IO (Votes d),
+  propose :: Paxos d -> Proposal d-> IO (Votes d),
+  accept :: Paxos d -> Decree d -> IO (M.Map MemberId (Maybe Bool))
 }
 
 {-|
@@ -85,7 +88,7 @@ data Prepare = Prepare {
 
 instance Serialize Prepare
 
-type Preparation d = Member d -> Prepare -> IO (Vote d)
+type Preparation d = Paxos d -> Prepare -> IO (Paxos d,Vote d)
 
 data Vote d = Dissent {
     dissentInstanceId :: InstanceId,
@@ -148,7 +151,7 @@ data Proposal d =  Proposal {
 
 instance (Decreeable d) => Serialize (Proposal d)
 
-type Proposition d = Member d -> Proposal d -> IO (Vote d)
+type Proposition d = Paxos d -> Proposal d -> IO (Paxos d, Vote d)
 
 newtype InstanceId = InstanceId Integer deriving (Eq, Ord, Show, Generic)
 
@@ -162,4 +165,4 @@ newtype BallotNumber = BallotNumber Integer deriving (Eq, Ord, Show, Generic)
 
 instance Serialize BallotNumber
 
-type Acceptance d = Member d -> Decree d -> IO Bool
+type Acceptance d = Paxos d -> Decree d -> IO (Paxos d,Bool)

@@ -37,7 +37,7 @@ import Network.RPC.Typed
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Member d -> Name -> IO (Maybe (Decree d))
+followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Paxos d -> Name -> IO (Maybe (Decree d))
 followBasicPaxosBallot endpoint member name = do
   maybePrepare <- hearTimeout endpoint name "prepare" pcallTimeout
   case maybePrepare of
@@ -71,7 +71,7 @@ mkProposer endpoint members name = Proposer {
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
 will be a response for every `Member`, even if it's just `Nothing`.
 -}
-pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Member d -> a -> IO (M.Map MemberId (Maybe r))
+pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Paxos d -> a -> IO (M.Map MemberId (Maybe r))
 pcall endpoint memberNames name method m args = do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems $ paxosMembers m) memberNames
