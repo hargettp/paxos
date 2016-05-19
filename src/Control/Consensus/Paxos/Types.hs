@@ -27,7 +27,11 @@ module Control.Consensus.Paxos.Types (
   Decreeable,
   BallotNumber(..),
   InstanceId(..),
-  MemberId(..)
+  MemberId(..),
+
+  Preparation(),
+  Proposition(),
+  Acceptance()
 
 ) where
 
@@ -80,6 +84,8 @@ data Prepare = Prepare {
 } deriving (Generic)
 
 instance Serialize Prepare
+
+type Preparation d = Member d -> Prepare -> IO (Vote d)
 
 data Vote d = Dissent {
     dissentInstanceId :: InstanceId,
@@ -142,6 +148,8 @@ data Proposal d =  Proposal {
 
 instance (Decreeable d) => Serialize (Proposal d)
 
+type Proposition d = Member d -> Proposal d -> IO (Vote d)
+
 newtype InstanceId = InstanceId Integer deriving (Eq, Ord, Show, Generic)
 
 instance Serialize InstanceId
@@ -153,3 +161,5 @@ instance Serialize MemberId
 newtype BallotNumber = BallotNumber Integer deriving (Eq, Ord, Show, Generic)
 
 instance Serialize BallotNumber
+
+type Acceptance d = Member d -> Decree d -> IO Bool

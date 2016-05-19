@@ -146,7 +146,7 @@ acceptance p m d = do
 
 -- callee
 
-onPrepare :: (Decreeable d) => Member d -> Prepare -> IO (Vote d)
+onPrepare :: (Decreeable d) => Preparation d
 onPrepare p prep = atomically $ do
   let preparedBallotNumber = tentativeBallotNumber prep
       vLedger = paxosLedger p
@@ -165,7 +165,7 @@ onPrepare p prep = atomically $ do
         dissentBallotNumber = ballotNumber
       }
 
-onPropose :: (Decreeable d) => Member d -> Proposal d -> IO (Vote d)
+onPropose :: (Decreeable d) => Proposition d
 onPropose p prop = atomically $ do
   ballotNumber <- nextProposedBallotNumber p
   if ballotNumber == proposedBallotNumber prop
@@ -185,7 +185,7 @@ onPropose p prop = atomically $ do
           dissentBallotNumber = ballotNumber
         }
 
-onAccept :: (Decreeable d) => Member d -> Decree d -> IO Bool
+onAccept :: (Decreeable d) => Acceptance d
 onAccept member d = acceptDecree member $ decreeable d
 
 ---
