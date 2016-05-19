@@ -14,7 +14,8 @@
 module Control.Consensus.Paxos.Network.Server (
 
 MemberNames,
-mkProposer
+mkProposer,
+followBasicPaxosBallot
 
 ) where
 
@@ -22,7 +23,7 @@ mkProposer
 
 -- external imports
 
-import Control.Consensus.Paxos.Types
+import Control.Consensus.Paxos
 import Control.Concurrent.Async
 
 import qualified Data.Map as M
@@ -35,6 +36,27 @@ import Network.RPC.Typed
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
+
+followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Member d -> Name -> IO (Maybe (Decree d))
+followBasicPaxosBallot endpoint member name = do
+  maybePrepare <- hearTimeout endpoint name "prepare" pcallTimeout
+  case maybePrepare of
+    Just (prep,reply1) -> do
+      vote1 <- onPrepare member prep
+      reply1 vote1
+      maybePropose <- hearTimeout endpoint name "propose" pcallTimeout
+      case maybePropose of
+        Just (prop,reply2) -> do
+          vote2 <- onPropose member prop
+          reply2 vote2
+          maybeDecree <- hearTimeout endpoint name "accept" pcallTimeout
+          case maybeDecree of
+            Just (decree,reply3) -> do
+              reply3 True
+              return $ Just decree
+            _ -> return Nothing
+        _ -> return Nothing
+    _ -> return Nothing
 
 type MemberNames = M.Map MemberId Name
 
@@ -54,10 +76,10 @@ pcall endpoint memberNames name method m args = do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems $ paxosMembers m) memberNames
       names = M.elems members
-  responses <- gcallWithTimeout cs names method (fromInteger pcallTimeout) args
+  responses <- gcallWithTimeout cs names method pcallTimeout args
   return $ composeMaps members responses
 
-pcallTimeout :: Integer
+pcallTimeout :: Int
 pcallTimeout = 150
 
 -------------------------------------------------------------------------------

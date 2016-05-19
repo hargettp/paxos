@@ -21,6 +21,7 @@ module Network.RPC.Typed (
   call,
   gcallWithTimeout,
   hear,
+  hearTimeout,
   typedMethodSelector,
 
   R.Method
@@ -70,6 +71,15 @@ hear endpoint name method = do
   where
     reply caller rid result =
       sendMessage endpoint caller $ encode $ R.Response rid name $ encode result
+
+hearTimeout :: (Serialize a, Serialize r) => Endpoint -> Name -> R.Method -> Int -> IO (Maybe (a, R.Reply r))
+hearTimeout endpoint name method timeout = do
+  req <- selectMessageTimeout endpoint timeout $ typedMethodSelector method
+  case req of
+    Just (caller,rid,args) -> return $ Just (args, reply caller rid)
+    Nothing -> return Nothing
+  where
+  reply caller rid result = sendMessage endpoint caller $ encode $ R.Response rid name $ encode result
 
 typedMethodSelector :: (Serialize a) => R.Method -> Message -> Maybe (Name,R.RequestId,a)
 typedMethodSelector method msg =
