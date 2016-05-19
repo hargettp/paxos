@@ -30,16 +30,16 @@ import qualified Data.Set as S
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-type Members d = M.Map MemberId (Paxos d)
+type MemberStates d = M.Map MemberId (Paxos d)
 
-mkProposer :: (Decreeable d) => Members d -> Proposer d
+mkProposer :: (Decreeable d) => MemberStates d -> Proposer d
 mkProposer members = Proposer {
   prepare = mcall members onPrepare,
   propose = mcall members onPropose,
   accept = mcall members onAccept
 }
 
-mcall :: (Serialize a,Serialize r) => Members d -> (Paxos d -> a -> IO r) -> Paxos d -> a -> IO (M.Map MemberId (Maybe r))
+mcall :: (Serialize a,Serialize r) => MemberStates d -> (Paxos d -> a -> IO (Paxos d,r)) -> Paxos d -> a -> IO (M.Map MemberId (Maybe r))
 mcall members fn member arg = do
   results <- mapM call $ S.elems $ paxosMembers member
   return $ M.fromList results
@@ -47,5 +47,5 @@ mcall members fn member arg = do
     call memberId = case M.lookup memberId members of
       Nothing -> return (memberId,Nothing)
       Just otherMember -> do
-        result <- fn otherMember arg
+        (_,result) <- fn otherMember arg
         return (memberId, Just result)

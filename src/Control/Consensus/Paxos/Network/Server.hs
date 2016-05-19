@@ -24,7 +24,6 @@ followBasicPaxosBallot
 -- external imports
 
 import Control.Consensus.Paxos
-import Control.Concurrent.Async
 
 import qualified Data.Map as M
 import Data.Maybe (isJust)
@@ -37,26 +36,27 @@ import Network.RPC.Typed
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Paxos d -> Name -> IO (Maybe (Decree d))
-followBasicPaxosBallot endpoint member name = do
+followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Paxos d -> Name -> IO (Paxos d,Maybe (Decree d))
+followBasicPaxosBallot endpoint p name = do
   maybePrepare <- hearTimeout endpoint name "prepare" pcallTimeout
   case maybePrepare of
     Just (prep,reply1) -> do
-      vote1 <- onPrepare member prep
+      (p1,vote1) <- onPrepare p prep
       reply1 vote1
       maybePropose <- hearTimeout endpoint name "propose" pcallTimeout
       case maybePropose of
         Just (prop,reply2) -> do
-          vote2 <- onPropose member prop
+          (p2,vote2) <- onPropose p1 prop
           reply2 vote2
           maybeDecree <- hearTimeout endpoint name "accept" pcallTimeout
           case maybeDecree of
             Just (decree,reply3) -> do
-              reply3 True
-              return $ Just decree
-            _ -> return Nothing
-        _ -> return Nothing
-    _ -> return Nothing
+              (p3,()) <- onAccept p2 decree
+              reply3 ()
+              return (p3,Just decree)
+            _ -> return (p2,Nothing)
+        _ -> return (p1,Nothing)
+    _ -> return (p,Nothing)
 
 type MemberNames = M.Map MemberId Name
 
@@ -111,12 +111,3 @@ composeMaps m1 m2 = M.fromList
   . filter (\(_,maybeValue) -> isJust maybeValue)
   . map (\(key1,key2) -> (key1,M.lookup key2 m2))
   $ M.toList m1
-
-{-|
-Run a group of functions using `withAsync` such that when the inner function exits, they all exit.
-!-}
-withAll :: [IO a] -> IO b -> IO b
-withAll [] _ = return undefined
-withAll [f] fn = withAsync f $ const fn
-withAll (f:fs) fn =
-  withAsync f $ \_ -> withAll fs fn
