@@ -14,7 +14,7 @@
 module Control.Consensus.Paxos.Network.Server (
 
 MemberNames,
-mkProposer,
+mkLedger,
 followBasicPaxosBallot
 
 ) where
@@ -36,7 +36,7 @@ import Network.RPC.Typed
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Paxos d -> Name -> IO (Paxos d,Maybe (Decree d))
+followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Ledger d -> Name -> IO (Ledger d,Maybe (Decree d))
 followBasicPaxosBallot endpoint p name = do
   maybePrepare <- hearTimeout endpoint name "prepare" pcallTimeout
   case maybePrepare of
@@ -60,8 +60,8 @@ followBasicPaxosBallot endpoint p name = do
 
 type MemberNames = M.Map MemberId Name
 
-mkProposer :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Proposer d
-mkProposer endpoint members name = Proposer {
+mkLedger :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Paxos d
+mkLedger endpoint members name = Paxos {
   prepare = pcall endpoint members name "prepare",
   propose = pcall endpoint members name "propose",
   accept = pcall endpoint members name "accept"
@@ -71,7 +71,7 @@ mkProposer endpoint members name = Proposer {
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
 will be a response for every `Member`, even if it's just `Nothing`.
 -}
-pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Paxos d -> a -> IO (M.Map MemberId (Maybe r))
+pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Ledger d -> a -> IO (M.Map MemberId (Maybe r))
 pcall endpoint memberNames name method m args = do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems $ paxosMembers m) memberNames
@@ -89,6 +89,7 @@ pcallTimeout = 150
 {-|
 Given a list of keys and a `M.Map` of keys to values,
 return a new `M.Map` that only has keys from the original list
+
 and where the original map has a value for the key. This is quick way
 of looking up a bunch of keys at once and getting a (possibly empty)
 map with the results.

@@ -17,10 +17,10 @@
 module Control.Consensus.Paxos.Types (
 
   Paxos(..),
+  Ledger(..),
   Members(),
   Vote(..),
   Votes,
-  Proposer(..),
   Prepare(..),
   Proposal(..),
   Decree(..),
@@ -44,7 +44,7 @@ import GHC.Generics
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-data Paxos d = (Decreeable d) => Member {
+data Ledger d = (Decreeable d) => Member {
   paxosInstanceId :: InstanceId,
   paxosMembers :: Members,
   paxosMemberId :: MemberId,
@@ -59,10 +59,10 @@ data Paxos d = (Decreeable d) => Member {
 
 type Members = S.Set MemberId
 
-data Proposer d = (Decreeable d) => Proposer {
-  prepare :: Paxos d -> Prepare -> IO (Votes d),
-  propose :: Paxos d -> Proposal d-> IO (Votes d),
-  accept :: Paxos d -> Decree d -> IO (M.Map MemberId (Maybe ()))
+data Paxos d = (Decreeable d) => Paxos {
+  prepare :: Ledger d -> Prepare -> IO (Votes d),
+  propose :: Ledger d -> Proposal d-> IO (Votes d),
+  accept :: Ledger d -> Decree d -> IO (M.Map MemberId (Maybe ()))
 }
 
 {-|
