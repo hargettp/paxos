@@ -82,7 +82,7 @@ data Ledger d = (Decreeable d) => Member {
   -- member fields
   nextExpectedBallotNumber:: BallotNumber, -- ^ this is nextBal[q]
   lastVote :: Maybe (Vote d), -- ^ this is prevVote[q]
-  acceptedDecree :: Maybe d
+  acceptedDecree :: Maybe (Decree d)
 }
 
 type Members = S.Set MemberId

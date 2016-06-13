@@ -55,27 +55,26 @@ Lead one ballot of voting, with one of 3 possible outcomes:
 leadBasicPaxosBallot :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
 leadBasicPaxosBallot p d = do
   earlierVotes <- preparation p
-  l1 <- get
-  let maybeChosenDecree = chooseDecree (paxosMembers l1) d earlierVotes
-  case maybeChosenDecree of
-    Nothing -> return Nothing
-    Just chosenDecree -> do
-      promised <- proposition p d
-      if promised
-        then acceptance p chosenDecree
-        else return Nothing
+  get >>= \l -> do
+    let maybeChosenDecree = chooseDecree (paxosMembers l) d earlierVotes
+    case maybeChosenDecree of
+      Nothing -> return Nothing
+      Just chosenDecree -> do
+        promised <- proposition p d
+        if promised
+          then acceptance p chosenDecree
+          else return Nothing
 
 preparation :: (Decreeable d) => Protocol d -> Paxos d (Votes d)
 preparation proposer = do
   b <- incrementNextProposedBallotNumber
-  l1 <- get
-  let prep = Prepare {
-        prepareInstanceId = paxosInstanceId l1,
-        tentativeBallotNumber = b
-        }
-  votes <- io $ prepare proposer l1 prep
-  ballotNumber <- maxBallotNumber votes
-  setNextExpectedBallotNumber ballotNumber
+  votes <- get >>= \l -> do
+    let prep = Prepare {
+          prepareInstanceId = paxosInstanceId l,
+          tentativeBallotNumber = b
+          }
+    io $ prepare proposer l prep
+  maxBallotNumber votes >>= setNextExpectedBallotNumber
   return votes
 
 chooseDecree :: (Decreeable d) => Members -> Decree d -> Votes d -> Maybe (Decree d)
@@ -98,33 +97,31 @@ chooseDecree members decree votes =
 proposition :: (Decreeable d) => Protocol d -> Decree d -> Paxos d Bool
 proposition proposer d = do
   proposed <- getNextProposedBallotNumber
-  l1 <- get
-  let proposal = Proposal {
-        proposalInstanceId = paxosInstanceId l1,
-        proposedBallotNumber = proposed,
-        proposedDecree = d
-      }
-  votes <- io $ propose proposer l1 proposal
-  ballotNumber <- maxBallotNumber votes
-  setNextExpectedBallotNumber ballotNumber
-  l2 <- get
-  let success = isMajority (paxosMembers l2) votes $ \vote ->
-        case vote of
-          Vote {} ->
-            (voteBallotNumber vote == proposed) &&
-             (voteInstanceId vote == paxosInstanceId l2)
-          Assent -> True
-          Dissent {} -> False
-  return success
+  votes <- get >>= \l -> do
+    let proposal = Proposal {
+          proposalInstanceId = paxosInstanceId l,
+          proposedBallotNumber = proposed,
+          proposedDecree = d
+        }
+    io $ propose proposer l proposal
+  maxBallotNumber votes >>= setNextExpectedBallotNumber
+  get >>= \l -> do
+    let success = isMajority (paxosMembers l) votes $ \vote ->
+          case vote of
+            Vote {} ->
+              (voteBallotNumber vote == proposed) &&
+               (voteInstanceId vote == paxosInstanceId l)
+            Assent -> True
+            Dissent {} -> False
+    return success
 
 acceptance :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
 acceptance p d = do
-  l1 <- get
-  responses <- io $ accept p l1 d
-  l2 <- get
-  if isMajority (paxosMembers l2) responses $ const True
-    then return $ Just d
-    else return Nothing
+  responses <- get >>= \l -> io $ accept p l d
+  get >>= \l ->
+    if isMajority (paxosMembers l) responses $ const True
+      then return $ Just d
+      else return Nothing
 
 --
 -- Actual protocol
@@ -133,22 +130,22 @@ acceptance p d = do
 -- callee
 
 onPrepare :: (Decreeable d) => Prepare -> Paxos d (Vote d)
-onPrepare prep = do
-  l1 <- get
-  let expectedBallotNumber = nextExpectedBallotNumber l1
-      preparedBallotNumber = tentativeBallotNumber prep
-  if preparedBallotNumber > expectedBallotNumber
-    then
-      case lastVote l1 of
-        Just vote -> do
-          setNextExpectedBallotNumber preparedBallotNumber
-          return vote
-        Nothing -> return Assent
-    else
-      return Dissent {
-        dissentInstanceId = paxosInstanceId l1,
-        dissentBallotNumber = expectedBallotNumber
-      }
+onPrepare prep =
+  get >>= \l -> do
+    let expectedBallotNumber = nextExpectedBallotNumber l
+        preparedBallotNumber = tentativeBallotNumber prep
+    if preparedBallotNumber > expectedBallotNumber
+      then
+        case lastVote l of
+          Just vote -> do
+            setNextExpectedBallotNumber preparedBallotNumber
+            return vote
+          Nothing -> return Assent
+      else
+        return Dissent {
+          dissentInstanceId = paxosInstanceId l,
+          dissentBallotNumber = expectedBallotNumber
+        }
 
 onPropose :: (Decreeable d) => Proposal d -> Paxos d (Vote d)
 onPropose prop = do
@@ -170,9 +167,10 @@ onPropose prop = do
           dissentBallotNumber = ballotNumber
         }
 
--- onAccept :: (Decreeable d) => Ledger d -> Decree d -> IO (Ledger d,())
 onAccept :: (Decreeable d) => Decree d -> Paxos d ()
-onAccept _ = return ()
+onAccept d =
+  modify $ \l ->
+    l { acceptedDecree = Just d}
 
 ---
 --- Ledger functions
@@ -195,21 +193,19 @@ getNextProposedBallotNumber = do
   return $ lastProposedBallotNumber l
 
 setLastVote :: Vote d -> Paxos d ()
-setLastVote vote = do
-  l <- get
-  set l {
-    lastVote = Just vote
-    }
-  return ()
+setLastVote vote =
+  modify $ \l ->
+    l {
+      lastVote = Just vote
+      }
 
 setNextExpectedBallotNumber :: BallotNumber -> Paxos d ()
-setNextExpectedBallotNumber nextBallotNumber = do
-  l <- get
-  let nextExpected = nextExpectedBallotNumber l
-  set l {
-    nextExpectedBallotNumber = max nextExpected nextBallotNumber
-    }
-  return ()
+setNextExpectedBallotNumber nextBallotNumber =
+  modify $ \l ->
+    let nextExpected = nextExpectedBallotNumber l
+    in l {
+      nextExpectedBallotNumber = max nextExpected nextBallotNumber
+      }
 
 -- Doing the state monad thing here explicitly, because no interest in pulling in mtl
 set :: Ledger d -> Paxos d ()
@@ -217,6 +213,11 @@ set l = Paxos $ \_ -> return (l,())
 
 get :: Paxos d (Ledger d)
 get = Paxos $ \l -> return (l,l)
+
+modify :: (Ledger d -> Ledger d) -> Paxos d ()
+modify fn = do
+  l <- get
+  set $ fn l
 
 io :: IO a -> Paxos d a
 io fn = Paxos $ \l -> do
