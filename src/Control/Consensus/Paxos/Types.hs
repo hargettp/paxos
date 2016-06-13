@@ -17,10 +17,13 @@
 module Control.Consensus.Paxos.Types (
 
   Paxos(..),
+  Protocol(..),
+  Phase(..),
   Ledger(..),
   Members(),
   Vote(..),
   Votes,
+  Petition(..),
   Prepare(..),
   Proposal(..),
   Decree(..),
@@ -44,6 +47,31 @@ import GHC.Generics
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
+data Paxos d a = Paxos {
+  runPaxos :: Ledger d -> IO (Ledger d, a)
+}
+
+instance Functor (Paxos d) where
+  fmap fn p = Paxos $ \l -> do
+    (l1,a) <- runPaxos p l
+    let b = fn a
+    return (l1,b)
+
+instance Applicative (Paxos d) where
+  pure a = Paxos $ \l ->
+    return (l,a)
+  pfn <*> pa = Paxos $ \l -> do
+    (l1,a) <- runPaxos pa l
+    (l2,fn) <- runPaxos pfn l1
+    let b = fn a
+    return (l2,b)
+
+instance Monad (Paxos d) where
+  p >>= pfn = Paxos $ \l -> do
+    (l1,a) <- runPaxos p l
+    let pb = pfn a
+    runPaxos pb l1
+
 data Ledger d = (Decreeable d) => Member {
   paxosInstanceId :: InstanceId,
   paxosMembers :: Members,
@@ -59,10 +87,27 @@ data Ledger d = (Decreeable d) => Member {
 
 type Members = S.Set MemberId
 
-data Paxos d = (Decreeable d) => Paxos {
+data Phase d = (Decreeable d) =>
+    -- When receiving a petition from a client
+    Lead (Petition d) (IO ()) |
+    -- When receiving a prepare from a leader
+    Follow Prepare (Vote d -> IO ())
+    -- When receiving a request to fetch decrees
+    -- Serve (Decree d) (IO ())
+
+data Protocol d = (Decreeable d) => Protocol {
   prepare :: Ledger d -> Prepare -> IO (Votes d),
   propose :: Ledger d -> Proposal d-> IO (Votes d),
-  accept :: Ledger d -> Decree d -> IO (M.Map MemberId (Maybe ()))
+  accept :: Ledger d -> Decree d -> IO (M.Map MemberId (Maybe ())),
+  phase :: Phase d,
+  hearPropose :: (Proposal d, Vote d -> IO ()) -> IO (),
+  hearAccept :: (Decree d, IO ()) -> IO ()
+}
+
+data Petition d = (Decreeable d) => Petition {
+  petitionClientId :: ClientId,
+  petitionSequenceNumber :: Integer,
+  petitionDecree :: d
 }
 
 {-|
@@ -143,6 +188,8 @@ instance Serialize InstanceId
 newtype MemberId = MemberId Integer deriving (Eq, Ord, Show, Generic)
 
 instance Serialize MemberId
+
+newtype ClientId = ClientId Integer deriving (Eq, Ord, Show, Generic)
 
 newtype BallotNumber = BallotNumber Integer deriving (Eq, Ord, Show, Generic)
 

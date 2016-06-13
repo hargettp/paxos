@@ -14,7 +14,7 @@
 module Control.Consensus.Paxos.Network.Server (
 
 MemberNames,
-mkLedger,
+mkPaxos,
 followBasicPaxosBallot
 
 ) where
@@ -36,32 +36,33 @@ import Network.RPC.Typed
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Ledger d -> Name -> IO (Ledger d,Maybe (Decree d))
-followBasicPaxosBallot endpoint p name = do
-  maybePrepare <- hearTimeout endpoint name "prepare" pcallTimeout
+-- followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Name -> Ledger d -> IO (Ledger d,Maybe (Decree d))
+followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Name -> Paxos d (Maybe (Decree d))
+followBasicPaxosBallot endpoint name = do
+  maybePrepare <- io $ hearTimeout endpoint name "prepare" pcallTimeout
   case maybePrepare of
     Just (prep,reply1) -> do
-      (p1,vote1) <- onPrepare p prep
-      reply1 vote1
-      maybePropose <- hearTimeout endpoint name "propose" pcallTimeout
+      vote1 <- onPrepare prep
+      io $ reply1 vote1
+      maybePropose <- io $ hearTimeout endpoint name "propose" pcallTimeout
       case maybePropose of
         Just (prop,reply2) -> do
-          (p2,vote2) <- onPropose p1 prop
-          reply2 vote2
-          maybeDecree <- hearTimeout endpoint name "accept" pcallTimeout
+          vote2 <- onPropose prop
+          io $ reply2 vote2
+          maybeDecree <- io $ hearTimeout endpoint name "accept" pcallTimeout
           case maybeDecree of
             Just (decree,reply3) -> do
-              (p3,()) <- onAccept p2 decree
-              reply3 ()
-              return (p3,Just decree)
-            _ -> return (p2,Nothing)
-        _ -> return (p1,Nothing)
-    _ -> return (p,Nothing)
+              onAccept decree
+              io $ reply3 ()
+              return $ Just decree
+            _ -> return Nothing
+        _ -> return Nothing
+    _ -> return Nothing
 
 type MemberNames = M.Map MemberId Name
 
-mkLedger :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Paxos d
-mkLedger endpoint members name = Paxos {
+mkPaxos :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Protocol d
+mkPaxos endpoint members name = Protocol {
   prepare = pcall endpoint members name "prepare",
   propose = pcall endpoint members name "propose",
   accept = pcall endpoint members name "accept"
