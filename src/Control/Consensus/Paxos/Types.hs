@@ -18,7 +18,6 @@ module Control.Consensus.Paxos.Types (
 
   Paxos(..),
   Protocol(..),
-  Phase(..),
   Ledger(..),
   Members(),
   Vote(..),
@@ -87,21 +86,10 @@ data Ledger d = (Decreeable d) => Member {
 
 type Members = S.Set MemberId
 
-data Phase d = (Decreeable d) =>
-    -- When receiving a petition from a client
-    Lead (Petition d) (IO ()) |
-    -- When receiving a prepare from a leader
-    Follow Prepare (Vote d -> IO ())
-    -- When receiving a request to fetch decrees
-    -- Serve (Decree d) (IO ())
-
 data Protocol d = (Decreeable d) => Protocol {
   prepare :: Ledger d -> Prepare -> IO (Votes d),
   propose :: Ledger d -> Proposal d-> IO (Votes d),
-  accept :: Ledger d -> Decree d -> IO (M.Map MemberId (Maybe ())),
-  phase :: Phase d,
-  hearPropose :: (Proposal d, Vote d -> IO ()) -> IO (),
-  hearAccept :: (Decree d, IO ()) -> IO ()
+  accept :: Ledger d -> Decree d -> IO (M.Map MemberId (Maybe ()))
 }
 
 data Petition d = (Decreeable d) => Petition {
