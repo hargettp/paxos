@@ -15,8 +15,8 @@
 
 module Control.Consensus.Paxos (
 
-  -- leadBasicPaxosInstance,
   leadBasicPaxosBallot,
+  followBasicPaxosBallot,
 
   onPrepare,
   onPropose,
@@ -64,6 +64,14 @@ leadBasicPaxosBallot p d = do
         if promised
           then acceptance p chosenDecree
           else return Nothing
+
+followBasicPaxosBallot :: (Decreeable d) => Protocol d -> Paxos d (Maybe (Decree d))
+followBasicPaxosBallot p =
+  expectPrepare p onPrepare >>= \prepared -> if prepared
+    then expectPropose p onPropose >>= \proposed -> if proposed
+      then expectAccept p onAccept
+      else return Nothing
+    else return Nothing
 
 preparation :: (Decreeable d) => Protocol d -> Paxos d (Votes d)
 preparation proposer = do
@@ -167,10 +175,11 @@ onPropose prop = do
           dissentBallotNumber = ballotNumber
         }
 
-onAccept :: (Decreeable d) => Decree d -> Paxos d ()
-onAccept d =
+onAccept :: (Decreeable d) => Decree d -> Paxos d (Decree d)
+onAccept d = do
   modify $ \ledger ->
     ledger { acceptedDecree = Just d}
+  return d
 
 ---
 --- Ledger functions

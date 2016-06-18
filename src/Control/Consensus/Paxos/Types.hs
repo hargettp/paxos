@@ -87,9 +87,15 @@ data Ledger d = (Decreeable d) => Member {
 type Members = S.Set MemberId
 
 data Protocol d = (Decreeable d) => Protocol {
+  -- leader methods
   prepare :: Ledger d -> Prepare -> IO (Votes d),
   propose :: Ledger d -> Proposal d-> IO (Votes d),
-  accept :: Ledger d -> Decree d -> IO (M.Map MemberId (Maybe ()))
+  accept :: Ledger d -> Decree d -> IO (M.Map MemberId (Maybe ())),
+
+  -- follower methods
+  expectPrepare :: (Prepare -> Paxos d (Vote d)) -> Paxos d Bool,
+  expectPropose :: (Proposal d -> Paxos d (Vote d)) -> Paxos d Bool,
+  expectAccept :: (Decree d -> Paxos d (Decree d)) -> Paxos d (Maybe (Decree d))
 }
 
 data Petition d = (Decreeable d) => Petition {

@@ -13,9 +13,8 @@
 
 module Control.Consensus.Paxos.Network.Server (
 
-MemberNames,
-mkPaxos,
-followBasicPaxosBallot
+  MemberNames,
+  mkPaxos
 
 ) where
 
@@ -36,36 +35,16 @@ import Network.RPC.Typed
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
--- followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Name -> Ledger d -> IO (Ledger d,Maybe (Decree d))
-followBasicPaxosBallot :: (Decreeable d) => Endpoint -> Name -> Paxos d (Maybe (Decree d))
-followBasicPaxosBallot endpoint name = do
-  maybePrepare <- io $ hearTimeout endpoint name "prepare" pcallTimeout
-  case maybePrepare of
-    Just (prep,reply1) -> do
-      vote1 <- onPrepare prep
-      io $ reply1 vote1
-      maybePropose <- io $ hearTimeout endpoint name "propose" pcallTimeout
-      case maybePropose of
-        Just (prop,reply2) -> do
-          vote2 <- onPropose prop
-          io $ reply2 vote2
-          maybeDecree <- io $ hearTimeout endpoint name "accept" pcallTimeout
-          case maybeDecree of
-            Just (decree,reply3) -> do
-              onAccept decree
-              io $ reply3 ()
-              return $ Just decree
-            _ -> return Nothing
-        _ -> return Nothing
-    _ -> return Nothing
-
 type MemberNames = M.Map MemberId Name
 
 mkPaxos :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Protocol d
 mkPaxos endpoint members name = Protocol {
   prepare = pcall endpoint members name "prepare",
   propose = pcall endpoint members name "propose",
-  accept = pcall endpoint members name "accept"
+  accept = pcall endpoint members name "accept",
+  expectPrepare = pack endpoint name "prepare",
+  expectPropose = pack endpoint name "propose",
+  expectAccept = phear endpoint name "accept"
 }
 
 {-|
@@ -82,6 +61,24 @@ pcall endpoint memberNames name method m args = do
 
 pcallTimeout :: Int
 pcallTimeout = 150
+
+pack :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d Bool
+pack endpoint name method fn = do
+  maybeResult <- phear endpoint name method fn
+  case maybeResult of
+    Just _ -> return True
+    Nothing -> return False
+
+phear :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d (Maybe r)
+phear endpoint name method fn = do
+  maybeArg <- io $ hearTimeout endpoint name method pcallTimeout
+  case maybeArg of
+    Just (arg,reply) -> do
+      r <- fn arg
+      io $ reply r
+      return $ Just r
+    Nothing -> return Nothing
+
 
 -------------------------------------------------------------------------------
 -- Utility

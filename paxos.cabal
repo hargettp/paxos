@@ -20,6 +20,7 @@ library
   default-language:    Haskell2010
   exposed-modules:
     Control.Consensus.Paxos
+    Control.Consensus.Paxos.Network.Server
     Control.Consensus.Paxos.Types
 
   -- other-modules:
