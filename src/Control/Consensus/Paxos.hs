@@ -81,7 +81,7 @@ preparation proposer = do
           prepareInstanceId = paxosInstanceId ledger,
           tentativeBallotNumber = b
           }
-    io $ prepare proposer ledger prep
+    prepare proposer ledger prep
   maxBallotNumber votes >>= setNextExpectedBallotNumber
   return votes
 
@@ -111,7 +111,7 @@ proposition proposer d = do
           proposedBallotNumber = proposed,
           proposedDecree = d
         }
-    io $ propose proposer ledger proposal
+    propose proposer ledger proposal
   maxBallotNumber votes >>= setNextExpectedBallotNumber
   get >>= \ledger -> do
     let success = isMajority (paxosMembers ledger) votes $ \vote ->
@@ -125,7 +125,7 @@ proposition proposer d = do
 
 acceptance :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
 acceptance p d = do
-  responses <- get >>= \ledger -> io $ accept p ledger d
+  responses <- get >>= \ledger -> accept p ledger d
   get >>= \ledger ->
     if isMajority (paxosMembers ledger) responses $ const True
       then return $ Just d

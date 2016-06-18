@@ -88,9 +88,9 @@ type Members = S.Set MemberId
 
 data Protocol d = (Decreeable d) => Protocol {
   -- leader methods
-  prepare :: Ledger d -> Prepare -> IO (Votes d),
-  propose :: Ledger d -> Proposal d-> IO (Votes d),
-  accept :: Ledger d -> Decree d -> IO (M.Map MemberId (Maybe ())),
+  prepare :: Ledger d -> Prepare -> Paxos d (Votes d),
+  propose :: Ledger d -> Proposal d-> Paxos d (Votes d),
+  accept :: Ledger d -> Decree d -> Paxos d (M.Map MemberId (Maybe ())),
 
   -- follower methods
   expectPrepare :: (Prepare -> Paxos d (Vote d)) -> Paxos d Bool,

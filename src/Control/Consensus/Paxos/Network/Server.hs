@@ -14,7 +14,7 @@
 module Control.Consensus.Paxos.Network.Server (
 
   MemberNames,
-  mkPaxos
+  protocol
 
 ) where
 
@@ -37,8 +37,8 @@ import Network.RPC.Typed
 
 type MemberNames = M.Map MemberId Name
 
-mkPaxos :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Protocol d
-mkPaxos endpoint members name = Protocol {
+protocol :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Protocol d
+protocol endpoint members name = Protocol {
   prepare = pcall endpoint members name "prepare",
   propose = pcall endpoint members name "propose",
   accept = pcall endpoint members name "accept",
@@ -51,8 +51,8 @@ mkPaxos endpoint members name = Protocol {
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
 will be a response for every `Member`, even if it's just `Nothing`.
 -}
-pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Ledger d -> a -> IO (M.Map MemberId (Maybe r))
-pcall endpoint memberNames name method m args = do
+pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Ledger d -> a -> Paxos d (M.Map MemberId (Maybe r))
+pcall endpoint memberNames name method m args = io $ do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems $ paxosMembers m) memberNames
       names = M.elems members
