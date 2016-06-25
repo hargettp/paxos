@@ -157,7 +157,7 @@ onPrepare prep =
 
 onPropose :: (Decreeable d) => Proposal d -> Paxos d (Vote d)
 onPropose prop = do
-  ballotNumber <-getNextProposedBallotNumber
+  ballotNumber <- getNextExpectedBallotNumber
   if ballotNumber == proposedBallotNumber prop
     then do
       let instanceId = proposalInstanceId prop
@@ -185,6 +185,15 @@ onAccept d = do
 --- Ledger functions
 ---
 
+-- Combine a leader and follower ledger, choosing the parts from each
+-- that the leader or follower updated (since neither updates the same parts
+-- as the other)
+combineLedgers :: Ledger d -> Ledger d -> Ledger d
+combineLedgers leaderLedger followerLedger = followerLedger {
+  lastProposedBallotNumber = lastProposedBallotNumber leaderLedger
+}
+
+
 incrementNextProposedBallotNumber :: Paxos d BallotNumber
 incrementNextProposedBallotNumber = do
   ledger <- get
@@ -200,6 +209,11 @@ getNextProposedBallotNumber :: Paxos d BallotNumber
 getNextProposedBallotNumber = do
   ledger <- get
   return $ lastProposedBallotNumber ledger
+
+getNextExpectedBallotNumber :: Paxos d BallotNumber
+getNextExpectedBallotNumber = do
+  ledger <- get
+  return $ nextExpectedBallotNumber ledger
 
 setLastVote :: Vote d -> Paxos d ()
 setLastVote vote =
