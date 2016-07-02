@@ -77,15 +77,16 @@ followBasicPaxosBallot p =
 
 preparation :: (Decreeable d) => Protocol d -> Paxos d (Votes d)
 preparation proposer = do
-  (ledger,prep) <- safely $ do
+  (members,prep) <- safely $ do
     b <- incrementNextProposedBallotNumber
     ledger <- get
     let prep = Prepare {
             prepareInstanceId = paxosInstanceId ledger,
             tentativeBallotNumber = b
             }
-    return (ledger,prep)
-  votes <- prepare proposer ledger prep
+        members = paxosMembers ledger
+    return (members,prep)
+  votes <- prepare proposer members prep
   safely $
     maxBallotNumber votes >>= setNextExpectedBallotNumber
   return votes
@@ -109,20 +110,21 @@ chooseDecree members decree votes =
 
 proposition :: (Decreeable d) => Protocol d -> Decree d -> Paxos d Bool
 proposition proposer d = do
-  (ledger,proposal,proposed) <- safely $ do
+  (members,proposal,proposed) <- safely $ do
     proposed <- getNextProposedBallotNumber
     ledger <- get
     let proposal = Proposal {
           proposalInstanceId = paxosInstanceId ledger,
           proposedBallotNumber = proposed,
           proposedDecree = d
-        }
-    return (ledger,proposal,proposed)
-  votes <- propose proposer ledger proposal
+          }
+        members = paxosMembers ledger
+    return (members,proposal,proposed)
+  votes <- propose proposer members proposal
   safely $ do
     maxBallotNumber votes >>= setNextExpectedBallotNumber
-    ledger1 <- get
-    let success = isMajority (paxosMembers ledger1) votes $ \vote ->
+    ledger <- get
+    let success = isMajority (paxosMembers ledger) votes $ \vote ->
           case vote of
             Vote {} ->
               (voteBallotNumber vote == proposed) &&
@@ -133,11 +135,13 @@ proposition proposer d = do
 
 acceptance :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
 acceptance p d = do
-  ledger <- safely get
-  responses <- accept p ledger d
+  members <- safely $ do
+    ledger <- get
+    return $ paxosMembers ledger
+  responses <- accept p members d
   safely $ do
-    ledger1 <- get
-    if isMajority (paxosMembers ledger1) responses $ const True
+    ledger <- get
+    if isMajority (paxosMembers ledger) responses $ const True
       then return $ Just d
       else return Nothing
 

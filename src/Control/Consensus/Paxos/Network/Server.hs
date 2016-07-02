@@ -51,10 +51,10 @@ protocol endpoint members name = Protocol {
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
 will be a response for every `Member`, even if it's just `Nothing`.
 -}
-pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Ledger d -> a -> Paxos d (M.Map MemberId (Maybe r))
+pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Members -> a -> Paxos d (M.Map MemberId (Maybe r))
 pcall endpoint memberNames name method m args = io $ do
   let cs = newCallSite endpoint name
-      members = lookupMany (S.elems $ paxosMembers m) memberNames
+      members = lookupMany (S.elems m) memberNames
       names = M.elems members
   responses <- gcallWithTimeout cs names method pcallTimeout args
   return $ composeMaps members responses
