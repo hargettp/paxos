@@ -23,7 +23,6 @@ module Control.Consensus.Paxos (
   onAccept,
 
   get,
-  set,
   io,
   mkMemberId,
 
@@ -35,6 +34,8 @@ module Control.Consensus.Paxos (
 import Control.Consensus.Paxos.Types
 
 -- external imports
+
+import Control.Concurrent.STM
 
 import qualified Data.Map as M
 import Data.Maybe
@@ -55,15 +56,16 @@ Lead one ballot of voting, with one of 3 possible outcomes:
 leadBasicPaxosBallot :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
 leadBasicPaxosBallot p d = do
   earlierVotes <- preparation p
-  get >>= \ledger -> do
-    let maybeChosenDecree = chooseDecree (paxosMembers ledger) d earlierVotes
-    case maybeChosenDecree of
-      Nothing -> return Nothing
-      Just chosenDecree -> do
-        promised <- proposition p d
-        if promised
-          then acceptance p chosenDecree
-          else return Nothing
+  maybeChosenDecree <- safely $ do
+    ledger <- get
+    return $ chooseDecree (paxosMembers ledger) d earlierVotes
+  case maybeChosenDecree of
+    Nothing -> return Nothing
+    Just chosenDecree -> do
+      promised <- proposition p d
+      if promised
+        then acceptance p chosenDecree
+        else return Nothing
 
 followBasicPaxosBallot :: (Decreeable d) => Protocol d -> Paxos d (Maybe (Decree d))
 followBasicPaxosBallot p =
@@ -75,14 +77,17 @@ followBasicPaxosBallot p =
 
 preparation :: (Decreeable d) => Protocol d -> Paxos d (Votes d)
 preparation proposer = do
-  b <- incrementNextProposedBallotNumber
-  votes <- get >>= \ledger -> do
+  (ledger,prep) <- safely $ do
+    b <- incrementNextProposedBallotNumber
+    ledger <- get
     let prep = Prepare {
-          prepareInstanceId = paxosInstanceId ledger,
-          tentativeBallotNumber = b
-          }
-    prepare proposer ledger prep
-  maxBallotNumber votes >>= setNextExpectedBallotNumber
+            prepareInstanceId = paxosInstanceId ledger,
+            tentativeBallotNumber = b
+            }
+    return (ledger,prep)
+  votes <- prepare proposer ledger prep
+  safely $
+    maxBallotNumber votes >>= setNextExpectedBallotNumber
   return votes
 
 chooseDecree :: (Decreeable d) => Members -> Decree d -> Votes d -> Maybe (Decree d)
@@ -104,17 +109,20 @@ chooseDecree members decree votes =
 
 proposition :: (Decreeable d) => Protocol d -> Decree d -> Paxos d Bool
 proposition proposer d = do
-  proposed <- getNextProposedBallotNumber
-  votes <- get >>= \ledger -> do
+  (ledger,proposal,proposed) <- safely $ do
+    proposed <- getNextProposedBallotNumber
+    ledger <- get
     let proposal = Proposal {
           proposalInstanceId = paxosInstanceId ledger,
           proposedBallotNumber = proposed,
           proposedDecree = d
         }
-    propose proposer ledger proposal
-  maxBallotNumber votes >>= setNextExpectedBallotNumber
-  get >>= \ledger -> do
-    let success = isMajority (paxosMembers ledger) votes $ \vote ->
+    return (ledger,proposal,proposed)
+  votes <- propose proposer ledger proposal
+  safely $ do
+    maxBallotNumber votes >>= setNextExpectedBallotNumber
+    ledger1 <- get
+    let success = isMajority (paxosMembers ledger1) votes $ \vote ->
           case vote of
             Vote {} ->
               (voteBallotNumber vote == proposed) &&
@@ -125,9 +133,11 @@ proposition proposer d = do
 
 acceptance :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
 acceptance p d = do
-  responses <- get >>= \ledger -> accept p ledger d
-  get >>= \ledger ->
-    if isMajority (paxosMembers ledger) responses $ const True
+  ledger <- safely get
+  responses <- accept p ledger d
+  safely $ do
+    ledger1 <- get
+    if isMajority (paxosMembers ledger1) responses $ const True
       then return $ Just d
       else return Nothing
 
@@ -138,7 +148,7 @@ acceptance p d = do
 -- callee
 
 onPrepare :: (Decreeable d) => Prepare -> Paxos d (Vote d)
-onPrepare prep =
+onPrepare prep = safely $
   get >>= \ledger -> do
     let expectedBallotNumber = nextExpectedBallotNumber ledger
         preparedBallotNumber = tentativeBallotNumber prep
@@ -156,7 +166,7 @@ onPrepare prep =
         }
 
 onPropose :: (Decreeable d) => Proposal d -> Paxos d (Vote d)
-onPropose prop = do
+onPropose prop = safely $ do
   ballotNumber <- getNextExpectedBallotNumber
   if ballotNumber == proposedBallotNumber prop
     then do
@@ -177,7 +187,7 @@ onPropose prop = do
 
 onAccept :: (Decreeable d) => Decree d -> Paxos d (Decree d)
 onAccept d = do
-  modify $ \ledger ->
+  safely $ modify $ \ledger ->
     ledger { acceptedDecree = Just d}
   return d
 
@@ -185,44 +195,35 @@ onAccept d = do
 --- Ledger functions
 ---
 
--- Combine a leader and follower ledger, choosing the parts from each
--- that the leader or follower updated (since neither updates the same parts
--- as the other)
-combineLedgers :: Ledger d -> Ledger d -> Ledger d
-combineLedgers leaderLedger followerLedger = followerLedger {
-  lastProposedBallotNumber = lastProposedBallotNumber leaderLedger
-}
-
-
-incrementNextProposedBallotNumber :: Paxos d BallotNumber
-incrementNextProposedBallotNumber = do
-  ledger <- get
+incrementNextProposedBallotNumber :: PaxosSTM d BallotNumber
+incrementNextProposedBallotNumber = PaxosSTM $ \vLedger -> do
+  ledger <- readTVar vLedger
   let BallotNumber lastProposed = lastProposedBallotNumber ledger
       BallotNumber nextExpected = nextExpectedBallotNumber ledger
       newBallotNumber = BallotNumber $ 1 + max lastProposed nextExpected
-  set ledger {
+  writeTVar vLedger ledger {
       lastProposedBallotNumber = newBallotNumber
       }
   return newBallotNumber
 
-getNextProposedBallotNumber :: Paxos d BallotNumber
-getNextProposedBallotNumber = do
-  ledger <- get
+getNextProposedBallotNumber :: PaxosSTM d BallotNumber
+getNextProposedBallotNumber = PaxosSTM $ \vLedger -> do
+  ledger <- readTVar vLedger
   return $ lastProposedBallotNumber ledger
 
-getNextExpectedBallotNumber :: Paxos d BallotNumber
-getNextExpectedBallotNumber = do
-  ledger <- get
+getNextExpectedBallotNumber :: PaxosSTM d BallotNumber
+getNextExpectedBallotNumber = PaxosSTM $ \vLedger -> do
+  ledger <- readTVar vLedger
   return $ nextExpectedBallotNumber ledger
 
-setLastVote :: Vote d -> Paxos d ()
+setLastVote :: Vote d -> PaxosSTM d ()
 setLastVote vote =
   modify $ \ledger ->
     ledger {
       lastVote = Just vote
       }
 
-setNextExpectedBallotNumber :: BallotNumber -> Paxos d ()
+setNextExpectedBallotNumber :: BallotNumber -> PaxosSTM d ()
 setNextExpectedBallotNumber nextBallotNumber =
   modify $ \ledger ->
     let nextExpected = nextExpectedBallotNumber ledger
@@ -230,22 +231,18 @@ setNextExpectedBallotNumber nextBallotNumber =
       nextExpectedBallotNumber = max nextExpected nextBallotNumber
       }
 
--- Doing the state monad thing here explicitly, because no interest in pulling in mtl
-set :: Ledger d -> Paxos d ()
-set ledger = Paxos $ \_ -> return (ledger,())
+get :: PaxosSTM d (Ledger d)
+get = PaxosSTM readTVar
 
-get :: Paxos d (Ledger d)
-get = Paxos $ \ledger -> return (ledger,ledger)
-
-modify :: (Ledger d -> Ledger d) -> Paxos d ()
-modify fn = do
-  ledger <- get
-  set $ fn ledger
+modify :: (Ledger d -> Ledger d) -> PaxosSTM d ()
+modify fn = PaxosSTM $ \vLedger -> modifyTVar vLedger fn
 
 io :: IO a -> Paxos d a
-io fn = Paxos $ \ledger -> do
-  a <- fn
-  return (ledger,a)
+io fn = Paxos $ const fn
+
+safely :: PaxosSTM d a -> Paxos d a
+safely p = Paxos $ \vLedger ->
+  atomically $ runPaxosSTM p vLedger
 
 --
 -- Factories
@@ -268,13 +265,14 @@ isMajority members votes test =
       countedVotes = filter (\(Just v) -> test v) actualVotes
   in (toInteger . length) countedVotes >= (toInteger . S.size $ members) `quot` 2
 
-maxBallotNumber :: Votes d -> Paxos d BallotNumber
-maxBallotNumber votes = Paxos $ \ledger -> do
+maxBallotNumber :: Votes d -> PaxosSTM d BallotNumber
+maxBallotNumber votes = do
+  ledger <- get
   let maxVote = maximum votes
       ballotNumber = nextExpectedBallotNumber ledger
-  return (ledger, case maxVote of
+  return $ case maxVote of
     Just vote -> case vote of
       Dissent{} -> max (dissentBallotNumber vote) ballotNumber
       Assent -> ballotNumber
       Vote{} -> max (voteBallotNumber vote) ballotNumber
-    Nothing -> ballotNumber)
+    Nothing -> ballotNumber

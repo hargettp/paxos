@@ -17,8 +17,10 @@
 module Control.Consensus.Paxos.Types (
 
   Paxos(..),
+  PaxosSTM(..),
   Protocol(..),
   Ledger(..),
+  TLedger,
   Members(),
   Vote(..),
   Votes,
@@ -37,6 +39,8 @@ module Control.Consensus.Paxos.Types (
 
 -- external imports
 
+import Control.Concurrent.STM
+
 import qualified Data.Map as M
 import Data.Serialize
 import qualified Data.Set as S
@@ -47,29 +51,54 @@ import GHC.Generics
 --------------------------------------------------------------------------------
 
 data Paxos d a = Paxos {
-  runPaxos :: Ledger d -> IO (Ledger d, a)
+  runPaxos :: TLedger d -> IO a
 }
 
 instance Functor (Paxos d) where
   fmap fn p = Paxos $ \l -> do
-    (l1,a) <- runPaxos p l
+    a <- runPaxos p l
     let b = fn a
-    return (l1,b)
+    return b
 
 instance Applicative (Paxos d) where
-  pure a = Paxos $ \l ->
-    return (l,a)
+  pure a = Paxos $ \_ ->
+    return a
   pfn <*> pa = Paxos $ \l -> do
-    (l1,a) <- runPaxos pa l
-    (l2,fn) <- runPaxos pfn l1
+    a <- runPaxos pa l
+    fn <- runPaxos pfn l
     let b = fn a
-    return (l2,b)
+    return b
 
 instance Monad (Paxos d) where
   p >>= pfn = Paxos $ \l -> do
-    (l1,a) <- runPaxos p l
+    a <- runPaxos p l
     let pb = pfn a
-    runPaxos pb l1
+    runPaxos pb l
+
+data PaxosSTM d a = PaxosSTM {
+  runPaxosSTM :: TLedger d -> STM a
+}
+
+instance Functor (PaxosSTM d) where
+  fmap fn p = PaxosSTM $ \vl -> do
+    a <- runPaxosSTM p vl
+    let b = fn a
+    return b
+
+instance Applicative (PaxosSTM d) where
+  pure a = PaxosSTM $ \_ ->
+    return a
+  pfn <*> pa = PaxosSTM $ \vl -> do
+    a <- runPaxosSTM pa vl
+    fn <- runPaxosSTM pfn vl
+    let b = fn a
+    return b
+
+instance Monad (PaxosSTM d) where
+  p >>= pfn = PaxosSTM $ \vl -> do
+    a <- runPaxosSTM p vl
+    let pb = pfn a
+    runPaxosSTM pb vl
 
 data Ledger d = (Decreeable d) => Member {
   paxosInstanceId :: InstanceId,
@@ -83,6 +112,8 @@ data Ledger d = (Decreeable d) => Member {
   lastVote :: Maybe (Vote d), -- ^ this is prevVote[q]
   acceptedDecree :: Maybe (Decree d)
 }
+
+type TLedger d = TVar (Ledger d)
 
 type Members = S.Set MemberId
 
