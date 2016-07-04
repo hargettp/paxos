@@ -100,7 +100,7 @@ instance Monad (PaxosSTM d) where
     let pb = pfn a
     runPaxosSTM pb vl
 
-data Ledger d = (Decreeable d) => Member {
+data Ledger d = (Decreeable d) => Ledger {
   paxosInstanceId :: InstanceId,
   paxosMembers :: Members,
   paxosMemberId :: MemberId,
@@ -171,7 +171,7 @@ type Votes d = M.Map MemberId (Maybe (Vote d))
 
 instance (Decreeable d) => Serialize (Vote d)
 
-class (Generic d, Serialize d) => Decreeable d
+class (Generic d, Serialize d, Eq d, Show d) => Decreeable d
 
 data Decree d = (Decreeable d) => Decree {
   decreeInstanceId :: InstanceId,
@@ -179,6 +179,11 @@ data Decree d = (Decreeable d) => Decree {
   decreeMemberId :: MemberId,
   decreeable :: d
   }
+
+instance (Decreeable d) => Eq (Decree d) where
+  d1 == d2 =
+    decreeInstanceId d1 == decreeInstanceId d2 &&
+    decreeMemberId d1 == decreeMemberId d2
 
 instance (Decreeable d) => Serialize (Decree d) where
   put d = do

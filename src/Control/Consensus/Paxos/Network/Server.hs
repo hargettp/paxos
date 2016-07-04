@@ -14,6 +14,7 @@
 module Control.Consensus.Paxos.Network.Server (
 
   MemberNames,
+  memberName,
   protocol
 
 ) where
@@ -29,6 +30,8 @@ import Data.Maybe (isJust)
 import Data.Serialize
 import qualified Data.Set as S
 
+import Debug.Trace
+
 import Network.Endpoints
 import Network.RPC.Typed
 
@@ -36,6 +39,13 @@ import Network.RPC.Typed
 --------------------------------------------------------------------------------
 
 type MemberNames = M.Map MemberId Name
+
+memberName :: Ledger d -> MemberNames -> Name
+memberName ledger memberNames =
+  let me = paxosMemberId ledger
+      Just name = M.lookup me memberNames
+      in name
+
 
 protocol :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Protocol d
 protocol endpoint members name = Protocol {
@@ -56,11 +66,12 @@ pcall endpoint memberNames name method m args = io $ do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems m) memberNames
       names = M.elems members
+  traceIO $ "pcalling " ++ method ++ " on " ++ show name ++ " to " ++ show names
   responses <- gcallWithTimeout cs names method pcallTimeout args
   return $ composeMaps members responses
 
 pcallTimeout :: Int
-pcallTimeout = 150
+pcallTimeout = 150000
 
 pack :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d Bool
 pack endpoint name method fn = do
@@ -71,6 +82,7 @@ pack endpoint name method fn = do
 
 phear :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d (Maybe r)
 phear endpoint name method fn = do
+  io $ traceIO $ "expecting " ++ method ++ " on " ++ show name
   maybeArg <- io $ hearTimeout endpoint name method pcallTimeout
   case maybeArg of
     Just (arg,reply) -> do
@@ -78,7 +90,6 @@ phear endpoint name method fn = do
       io $ reply r
       return $ Just r
     Nothing -> return Nothing
-
 
 -------------------------------------------------------------------------------
 -- Utility

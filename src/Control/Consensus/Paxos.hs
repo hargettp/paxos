@@ -18,13 +18,18 @@ module Control.Consensus.Paxos (
   leadBasicPaxosBallot,
   followBasicPaxosBallot,
 
+  paxos,
+
   onPrepare,
   onPropose,
   onAccept,
 
   get,
   io,
+  safely,
+
   mkMemberId,
+  mkTLedger,
 
   module Control.Consensus.Paxos.Types
 
@@ -74,6 +79,10 @@ followBasicPaxosBallot p =
       then expectAccept p onAccept
       else return Nothing
     else return Nothing
+
+
+paxos :: TLedger d -> Paxos d a -> IO a
+paxos = flip runPaxos
 
 preparation :: (Decreeable d) => Protocol d -> Paxos d (Votes d)
 preparation proposer = do
@@ -254,6 +263,19 @@ safely p = Paxos $ \vLedger ->
 
 mkMemberId :: IO MemberId
 mkMemberId = fmap MemberId R.randomIO
+
+mkTLedger :: (Decreeable d) => InstanceId -> Members -> MemberId -> IO (TLedger d)
+mkTLedger instanceId members me = do
+  let ledger = Ledger {
+    paxosInstanceId = instanceId,
+    paxosMembers = members,
+    paxosMemberId = me,
+    lastProposedBallotNumber = BallotNumber 0,
+    nextExpectedBallotNumber = BallotNumber 0,
+    lastVote = Nothing,
+    acceptedDecree = Nothing
+  }
+  atomically $ newTVar ledger
 
 --
 -- Utility

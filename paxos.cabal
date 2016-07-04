@@ -22,6 +22,10 @@ library
     Control.Consensus.Paxos
     Control.Consensus.Paxos.Network.Server
     Control.Consensus.Paxos.Types
+    Network.RPC.Typed
+    Network.Server
+    Network.Server.Memory
+    Network.Server.TCP
 
   -- other-modules:
   -- other-extensions:
@@ -55,6 +59,11 @@ Test-Suite test-paxos
         test-framework-hunit,
         -- Cabal,
         -- 3rd party modules
+        async,
+        cereal,
+        containers,
+        courier,
+        stm,
         -- this project's modules
         paxos
 

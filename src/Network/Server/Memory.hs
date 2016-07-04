@@ -1,6 +1,6 @@
 -----------------------------------------------------------------------------
 -- |
--- Module      :  Network.Server.TCP
+-- Module      :  Network.Server.Memory
 -- Copyright   :  (c) Phil Hargett 2016
 -- License     :  MIT (see LICENSE file)
 --
@@ -11,10 +11,9 @@
 --
 -----------------------------------------------------------------------------
 
-module Network.Server.TCP (
+module Network.Server.Memory (
 
-  withTCP4Server,
-  withTCP6Server
+  withMemoryServer
 
 ) where
 
@@ -25,13 +24,10 @@ import Network.Server
 -- external imports
 
 import Network.Endpoints
-import Network.Transport.Sockets.TCP
+import Network.Transport.Memory
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-withTCP4Server :: Name -> (Transport -> Endpoint -> IO ()) -> IO ()
-withTCP4Server = withServer (newTCPTransport4 tcpSocketResolver4)
-
-withTCP6Server :: Name -> (Transport -> Endpoint -> IO ()) -> IO ()
-withTCP6Server = withServer (newTCPTransport6 tcpSocketResolver6)
+withMemoryServer :: Name -> (Transport -> Endpoint -> IO a) -> IO a
+withMemoryServer = withServer newMemoryTransport
