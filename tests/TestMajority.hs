@@ -7,8 +7,6 @@ where
 
 import Control.Consensus.Paxos
 
-import SimpleDecree
-
 -- external imports
 
 import qualified Data.Map as M
@@ -23,7 +21,7 @@ import Test.Framework.Providers.HUnit
 
 tests :: [Test.Framework.Test]
 tests = [
-  testCase "majoriy" testMajority
+  testCase "majority" testMajority
   ]
 
 testMajority :: Assertion
@@ -33,11 +31,6 @@ testMajority = do
       mid2 = MemberId 2
       mid3 = MemberId 3
       members = S.fromList [mid1, mid2, mid3]
-      decree1 = Decree {
-        decreeInstanceId = instanceId,
-        decreeMemberId = mid1,
-        decreeable = SetValue 1
-        }
       votes1 = M.fromList [(mid1, Just Assent),(mid2, Just Assent),(mid3, Just Assent)]
   assertBool "Unanimous assent is majority" $ isMajority members votes1 $ \v ->
     case v of
@@ -46,7 +39,7 @@ testMajority = do
   let votes2 = M.fromList [
         (mid1, Just Assent),
         (mid2, Just Assent),
-        (mid3, Just $ Dissent {
+        (mid3, Just Dissent {
           dissentInstanceId = instanceId,
           dissentBallotNumber = BallotNumber 2
           })]
@@ -60,7 +53,7 @@ testMajority = do
           dissentInstanceId = instanceId,
           dissentBallotNumber = BallotNumber 2
           }),
-        (mid3, Just $ Dissent {
+        (mid3, Just Dissent {
           dissentInstanceId = instanceId,
           dissentBallotNumber = BallotNumber 2
           })]
@@ -68,3 +61,11 @@ testMajority = do
     case v of
       Assent -> True
       _ -> False
+  let votes4 = M.fromList [
+        (mid1, Nothing),
+        (mid2, Nothing),
+        (mid3, Nothing)]
+  assertBool "No votes is minority" $ not $ isMajority members votes4 $ \vote ->
+    case vote of
+      Dissent{} -> False
+      _ -> True

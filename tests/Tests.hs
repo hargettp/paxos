@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-
 module Main where
 
 -- local imports
@@ -9,22 +7,21 @@ import Control.Consensus.Paxos.Network.Server
 
 import Network.Transport.Memory
 
+import qualified TestChooseDecree as TC
 import qualified TestMajority as TM
 import SimpleDecree
 
 -- external imports
 
+import Control.Concurrent
 import Control.Concurrent.Async
 import Control.Concurrent.STM
 import Control.Exception
 
 import qualified Data.Map as M
-import qualified Data.Serialize as C
 import qualified Data.Set as S
 
 import Debug.Trace
-
-import GHC.Generics
 
 import Network.Endpoints
 
@@ -45,7 +42,9 @@ allTests = [
   testCase "member-id" testMemberIdFactory,
   testCase "ledger" testLedgerFactory,
   testCase "1-ballot" test1Ballot
-  ] ++ TM.tests
+  ]
+  ++ TM.tests
+  ++ TC.tests
 
 testMemberIdFactory :: Assertion
 testMemberIdFactory = do
@@ -92,6 +91,7 @@ test1Ballot = do
       withAsync (runFollower1Ballot transport endpoint2 vLedger2 memberNames) $ \async2 ->
         withAsync (runFollower1Ballot transport endpoint3 vLedger3 memberNames) $ \async3 -> do
           traceIO "before leading"
+          threadDelay (250 * 1000 :: Int)
           leader1 <- runLeader1Ballot endpoint1 vLedger1 memberNames decree
           traceIO "before waiting on followers"
           follower1 <- wait async1
@@ -133,4 +133,4 @@ timeBound delay action = do
   assertBool "Test should not block" $ outcome == Just ()
 
 maxTestRun :: Int
-maxTestRun = 5000 * 1000 -- 1 sec
+maxTestRun = 2000 * 1000 -- 5 sec

@@ -84,7 +84,7 @@ pack endpoint name method fn = do
 phear :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d (Maybe r)
 phear endpoint name method fn = do
   io $ traceIO $ "expecting " ++ show method ++ " on " ++ show name
-  maybeArg <- io $ hearTimeout endpoint name method (3 * pcallTimeout)
+  maybeArg <- io $ hearTimeout endpoint name method (4 * pcallTimeout)
   case maybeArg of
     Just (arg,reply) -> do
       r <- fn $! arg
