@@ -31,6 +31,9 @@ module Control.Consensus.Paxos (
   mkMemberId,
   mkTLedger,
 
+  isMajority,
+  chooseDecree,
+
   module Control.Consensus.Paxos.Types
 
 ) where
@@ -45,6 +48,8 @@ import Control.Concurrent.STM
 import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
+
+import Debug.Trace
 
 import qualified System.Random as R
 
@@ -96,6 +101,7 @@ preparation proposer = do
         members = paxosMembers ledger
     return (members,prep)
   votes <- prepare proposer members prep
+  io $ traceIO $ "Votes are " ++ show votes
   safely $
     maxBallotNumber votes >>= setNextExpectedBallotNumber
   return votes
@@ -119,6 +125,7 @@ chooseDecree members decree votes =
 
 proposition :: (Decreeable d) => Protocol d -> Decree d -> Paxos d Bool
 proposition proposer d = do
+  io $ traceIO $ "Proposing " ++ show d
   (members,proposal,proposed) <- safely $ do
     proposed <- getNextProposedBallotNumber
     ledger <- get

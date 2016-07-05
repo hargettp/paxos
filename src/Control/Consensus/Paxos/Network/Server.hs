@@ -66,12 +66,13 @@ pcall endpoint memberNames name method m args = io $ do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems m) memberNames
       names = M.elems members
-  traceIO $ "pcalling " ++ method ++ " on " ++ show name ++ " to " ++ show names
+  traceIO $ "pcalling " ++ show method ++ " on " ++ show name ++ " to " ++ show names
   responses <- gcallWithTimeout cs names method pcallTimeout args
+  traceIO $ "pcalling " ++ show method ++ " on " ++ show name ++ " complete"
   return $ composeMaps members responses
 
 pcallTimeout :: Int
-pcallTimeout = 150000
+pcallTimeout = 250 * 1000 -- 150ms
 
 pack :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d Bool
 pack endpoint name method fn = do
@@ -82,11 +83,11 @@ pack endpoint name method fn = do
 
 phear :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d (Maybe r)
 phear endpoint name method fn = do
-  io $ traceIO $ "expecting " ++ method ++ " on " ++ show name
-  maybeArg <- io $ hearTimeout endpoint name method pcallTimeout
+  io $ traceIO $ "expecting " ++ show method ++ " on " ++ show name
+  maybeArg <- io $ hearTimeout endpoint name method (3 * pcallTimeout)
   case maybeArg of
     Just (arg,reply) -> do
-      r <- fn arg
+      r <- fn $! arg
       io $ reply r
       return $ Just r
     Nothing -> return Nothing

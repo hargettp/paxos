@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -155,7 +156,7 @@ data Vote d = Dissent {
     voteBallotNumber :: BallotNumber,
     voteDecree :: Decree d
     }
-  deriving (Generic)
+  deriving (Generic,Show)
 
 instance Eq (Vote d) where
   a == b = voteBallotNumber a == voteBallotNumber b
@@ -179,6 +180,8 @@ data Decree d = (Decreeable d) => Decree {
   decreeMemberId :: MemberId,
   decreeable :: d
   }
+
+deriving instance (Show d) => Show (Decree d)
 
 instance (Decreeable d) => Eq (Decree d) where
   d1 == d2 =

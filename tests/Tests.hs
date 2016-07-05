@@ -7,7 +7,10 @@ module Main where
 import Control.Consensus.Paxos
 import Control.Consensus.Paxos.Network.Server
 
-import Network.Server.Memory
+import Network.Transport.Memory
+
+import qualified TestMajority as TM
+import SimpleDecree
 
 -- external imports
 
@@ -42,7 +45,7 @@ allTests = [
   testCase "member-id" testMemberIdFactory,
   testCase "ledger" testLedgerFactory,
   testCase "1-ballot" test1Ballot
-  ]
+  ] ++ TM.tests
 
 testMemberIdFactory :: Assertion
 testMemberIdFactory = do
@@ -79,41 +82,32 @@ test1Ballot = do
   vLedger2 <- mkTLedger instanceId members mid2
   vLedger3 <- mkTLedger instanceId members mid3
 
-  traceIO "starting cluster"
+  transport <- newMemoryTransport
+  endpoint1 <- newEndpoint
+  endpoint2 <- newEndpoint
+  endpoint3 <- newEndpoint
 
   timeBound maxTestRun $
-    withAsync (runFollower1Ballot vLedger1 memberNames) $ \async1 ->
-      withAsync (runFollower1Ballot vLedger2 memberNames) $ \async2 ->
-        withAsync (runFollower1Ballot vLedger3 memberNames) $ \async3 -> do
+    withAsync (runFollower1Ballot transport endpoint1 vLedger1 memberNames) $ \async1 ->
+      withAsync (runFollower1Ballot transport endpoint2 vLedger2 memberNames) $ \async2 ->
+        withAsync (runFollower1Ballot transport endpoint3 vLedger3 memberNames) $ \async3 -> do
           traceIO "before leading"
-          leader1 <- runLeader1Ballot vLedger1 memberNames decree
+          leader1 <- runLeader1Ballot endpoint1 vLedger1 memberNames decree
           traceIO "before waiting on followers"
           follower1 <- wait async1
           (follower2,follower3) <- waitBoth async2 async3
+          traceIO $ "Results are : " ++ show leader1 ++ " " ++ show follower1 ++ " "++ show follower2 ++ " "++ show follower3 ++ " "
           assertBool "expected leader decree" $ leader1 == Just decree
           assertBool "expected follower2 decree" $ leader1 == follower1
           assertBool "expected follower2 decree" $ follower1 == follower2
           assertBool "expected follower3 decree" $ follower2 == follower3
 
-data IntegerOperation =
-  SetValue Integer |
-  GetValue Integer |
-  AddDelta Integer |
-  SubtractDelta Integer |
-  MultiplyFactor Integer |
-  DivideByFactor Integer
-  deriving (Generic, Eq, Show)
-
-instance C.Serialize IntegerOperation
-
-instance Decreeable IntegerOperation
-
-runFollower1Ballot :: (Decreeable d) => TLedger d -> MemberNames -> IO (Maybe (Decree d))
-runFollower1Ballot vLedger memberNames = catch (do
+runFollower1Ballot :: (Decreeable d) => Transport -> Endpoint -> TLedger d -> MemberNames -> IO (Maybe (Decree d))
+runFollower1Ballot transport endpoint vLedger memberNames = catch (do
     name <- atomically $ do
       ledger <- readTVar vLedger
       return $ memberName ledger memberNames
-    withMemoryServer name $ \_ endpoint -> do
+    withBinding transport endpoint name $ do
       let p = protocol endpoint memberNames name
       traceIO $ "starting to follow on " ++ show name
       paxos vLedger $ followBasicPaxosBallot p)
@@ -121,15 +115,14 @@ runFollower1Ballot vLedger memberNames = catch (do
     traceIO $ "follower error: " ++ show (e :: SomeException)
     return Nothing)
 
-runLeader1Ballot :: (Decreeable d) => TLedger d -> MemberNames -> Decree d -> IO (Maybe (Decree d))
-runLeader1Ballot vLedger memberNames decree = catch (do
+runLeader1Ballot :: (Decreeable d) =>  Endpoint -> TLedger d -> MemberNames -> Decree d -> IO (Maybe (Decree d))
+runLeader1Ballot endpoint vLedger memberNames decree = catch (do
     name <- atomically $ do
       ledger <- readTVar vLedger
       return $ memberName ledger memberNames
-    withMemoryServer name $ \_ endpoint -> do
-      let p = protocol endpoint memberNames name
-      traceIO $ "starting to lead : " ++ show name
-      paxos vLedger $ leadBasicPaxosBallot p decree)
+    let p = protocol endpoint memberNames name
+    traceIO $ "starting to lead : " ++ show name
+    paxos vLedger $ leadBasicPaxosBallot p decree)
   (\e -> do
     traceIO $ "leader error: "  ++ show (e :: SomeException)
     return Nothing)
@@ -140,4 +133,4 @@ timeBound delay action = do
   assertBool "Test should not block" $ outcome == Just ()
 
 maxTestRun :: Int
-maxTestRun = 10000
+maxTestRun = 5000 * 1000 -- 1 sec
