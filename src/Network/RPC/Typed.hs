@@ -30,6 +30,7 @@ module Network.RPC.Typed (
 
 import Network.Endpoints
 import Network.RPC hiding (call,gcallWithTimeout,hear,hearTimeout)
+import qualified Network.RPC as R
 
 -- external imports
 
@@ -49,7 +50,7 @@ call cs name method args = do
 
 gcallWithTimeout :: (Serialize a,Serialize b) => CallSite -> [Name] -> Method -> Int -> a -> IO (M.Map Name (Maybe b))
 gcallWithTimeout cs names method delay args = do
-  responses <- gcallWithTimeout cs names method delay (encode args)
+  responses <- R.gcallWithTimeout cs names method delay $ encode args
   return $ decodeResponses responses
 
 decodeResponses :: (Serialize r) => M.Map Name (Maybe Message)  -> M.Map Name (Maybe r)
@@ -86,7 +87,8 @@ hearTimeout endpoint name method timeout = do
 typedMethodSelector :: (Serialize a) => Method -> Message -> Maybe (Name,RequestId,a)
 typedMethodSelector method msg =
   case decode msg of
-    Left _ -> Nothing
+    Left _ ->
+      Nothing
     Right (Request rid caller rmethod bytes) ->
       if rmethod == method
         then case decode bytes of
