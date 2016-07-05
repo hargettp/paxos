@@ -112,16 +112,16 @@ chooseDecree members decree votes =
     case vote of
       Dissent{} -> False
       _ -> True
-    -- we didn't hear from a majority of members--we have no common decree
-    then Nothing
     -- we did hear from the majority
-    else case maximum votes of
+    then case maximum votes of
       -- there was no other preferred decree, so use ours
       Nothing -> Just decree
       -- there is agreement on ours
       Just Assent -> Just decree
       -- pick the latest one from earlier
       Just vote -> Just $ voteDecree vote
+    -- we didn't hear from a majority of members--we have no common decree
+    else Nothing
 
 proposition :: (Decreeable d) => Protocol d -> Decree d -> Paxos d Bool
 proposition proposer d = do
@@ -296,7 +296,7 @@ isMajority :: Members -> M.Map MemberId (Maybe v) -> (v -> Bool)-> Bool
 isMajority members votes test =
   let actualVotes = filter isJust $ M.elems votes
       countedVotes = filter (\(Just v) -> test v) actualVotes
-  in (toInteger . length) countedVotes >= (toInteger . S.size $ members) `quot` 2
+  in (toInteger . length) countedVotes > (toInteger . S.size $ members) `quot` 2
 
 maxBallotNumber :: Votes d -> PaxosSTM d BallotNumber
 maxBallotNumber votes = do
