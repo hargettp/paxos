@@ -81,36 +81,38 @@ test1Ballot = do
   vLedger2 <- mkTLedger instanceId members mid2
   vLedger3 <- mkTLedger instanceId members mid3
 
-  transport <- newMemoryTransport
   endpoint1 <- newEndpoint
   endpoint2 <- newEndpoint
   endpoint3 <- newEndpoint
 
   timeBound maxTestRun $
-    withAsync (runFollower1Ballot transport endpoint1 vLedger1 memberNames) $ \async1 ->
-      withAsync (runFollower1Ballot transport endpoint2 vLedger2 memberNames) $ \async2 ->
-        withAsync (runFollower1Ballot transport endpoint3 vLedger3 memberNames) $ \async3 -> do
-          traceIO "before leading"
-          threadDelay (250 * 1000 :: Int)
-          leader1 <- runLeader1Ballot endpoint1 vLedger1 memberNames decree
-          traceIO "before waiting on followers"
-          follower1 <- wait async1
-          (follower2,follower3) <- waitBoth async2 async3
-          traceIO $ "Results are : " ++ show leader1 ++ " " ++ show follower1 ++ " "++ show follower2 ++ " "++ show follower3 ++ " "
-          assertBool "expected leader decree" $ leader1 == Just decree
-          assertBool "expected follower2 decree" $ leader1 == follower1
-          assertBool "expected follower2 decree" $ follower1 == follower2
-          assertBool "expected follower3 decree" $ follower2 == follower3
+    withTransport newMemoryTransport $ \transport ->
+      withAsync (runFollower1Ballot transport endpoint1 vLedger1 memberNames) $ \async1 ->
+        withAsync (runFollower1Ballot transport endpoint2 vLedger2 memberNames) $ \async2 ->
+          withAsync (runFollower1Ballot transport endpoint3 vLedger3 memberNames) $ \async3 ->
+            withConnection3 transport endpoint1 (Name $ show mid1) (Name $ show mid2) (Name $ show mid3) $ do
+              traceIO "before leading"
+              threadDelay (250 * 1000 :: Int)
+              leader1 <- runLeader1Ballot endpoint1 vLedger1 memberNames decree
+              traceIO "before waiting on followers"
+              follower1 <- wait async1
+              (follower2,follower3) <- waitBoth async2 async3
+              traceIO $ "Results are : " ++ show leader1 ++ " " ++ show follower1 ++ " "++ show follower2 ++ " "++ show follower3 ++ " "
+              assertBool "expected leader decree" $ leader1 == Just decree
+              assertBool "expected follower2 decree" $ leader1 == follower1
+              assertBool "expected follower2 decree" $ follower1 == follower2
+              assertBool "expected follower3 decree" $ follower2 == follower3
 
 runFollower1Ballot :: (Decreeable d) => Transport -> Endpoint -> TLedger d -> MemberNames -> IO (Maybe (Decree d))
 runFollower1Ballot transport endpoint vLedger memberNames = catch (do
     name <- atomically $ do
       ledger <- readTVar vLedger
       return $ memberName ledger memberNames
-    withBinding transport endpoint name $ do
-      let p = protocol endpoint memberNames name
-      traceIO $ "starting to follow on " ++ show name
-      paxos vLedger $ followBasicPaxosBallot p)
+    withEndpoint transport endpoint $
+      withBinding transport endpoint name $ do
+        let p = protocol endpoint memberNames name
+        traceIO $ "starting to follow on " ++ show name
+        paxos vLedger $ followBasicPaxosBallot p)
   (\e -> do
     traceIO $ "follower error: " ++ show (e :: SomeException)
     return Nothing)
@@ -133,4 +135,4 @@ timeBound delay action = do
   assertBool "Test should not block" $ outcome == Just ()
 
 maxTestRun :: Int
-maxTestRun = 2000 * 1000 -- 5 sec
+maxTestRun = 5000 * 1000 -- 5 sec

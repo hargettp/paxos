@@ -81,7 +81,9 @@ followBasicPaxosBallot :: (Decreeable d) => Protocol d -> Paxos d (Maybe (Decree
 followBasicPaxosBallot p =
   expectPrepare p onPrepare >>= \prepared -> if prepared
     then expectPropose p onPropose >>= \proposed -> if proposed
-      then expectAccept p onAccept
+      then expectAccept p onAccept >>= \accepted -> if accepted
+        then safely $ get >>= \ledger -> return $ acceptedDecree ledger
+        else return Nothing
       else return Nothing
     else return Nothing
 
@@ -100,10 +102,11 @@ preparation proposer = do
             }
         members = paxosMembers ledger
     return (members,prep)
+  traceM $ "Preparing " ++ show prep
   votes <- prepare proposer members prep
-  io $ traceIO $ "Votes are " ++ show votes
+  io $ traceIO $ "Preparation votes are " ++ show votes
   safely $
-    maxBallotNumber votes >>= setNextExpectedBallotNumber
+    maxBallotNumber votes >>= setNextProposedBallotNumber
   return votes
 
 chooseDecree :: (Decreeable d) => Members -> Decree d -> Votes d -> Maybe (Decree d)
@@ -125,7 +128,6 @@ chooseDecree members decree votes =
 
 proposition :: (Decreeable d) => Protocol d -> Decree d -> Paxos d Bool
 proposition proposer d = do
-  io $ traceIO $ "Proposing " ++ show d
   (members,proposal,proposed) <- safely $ do
     proposed <- getNextProposedBallotNumber
     ledger <- get
@@ -136,9 +138,11 @@ proposition proposer d = do
           }
         members = paxosMembers ledger
     return (members,proposal,proposed)
+  traceM $ "Proposing " ++ show proposal
   votes <- propose proposer members proposal
+  io $ traceIO $ "Proposition votes are " ++ show votes
   safely $ do
-    maxBallotNumber votes >>= setNextExpectedBallotNumber
+    -- maxBallotNumber votes >>= setNextProposedBallotNumber
     ledger <- get
     let success = isMajority (paxosMembers ledger) votes $ \vote ->
           case vote of
@@ -147,6 +151,7 @@ proposition proposer d = do
                (voteInstanceId vote == paxosInstanceId ledger)
             Assent -> True
             Dissent {} -> False
+    traceM $ "Vote was successful: " ++ show success
     return success
 
 acceptance :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
@@ -155,9 +160,10 @@ acceptance p d = do
     ledger <- get
     return $ paxosMembers ledger
   responses <- accept p members d
+  traceM $ "Acceptance responses are " ++ show responses
   safely $ do
     ledger <- get
-    if isMajority (paxosMembers ledger) responses $ const True
+    if isMajority (paxosMembers ledger) responses $ id
       then return $ Just d
       else return Nothing
 
@@ -178,7 +184,9 @@ onPrepare prep = safely $
           Just vote -> do
             setNextExpectedBallotNumber preparedBallotNumber
             return vote
-          Nothing -> return Assent
+          Nothing -> do
+            setNextExpectedBallotNumber preparedBallotNumber
+            return Assent
       else
         return Dissent {
           dissentInstanceId = paxosInstanceId ledger,
@@ -188,6 +196,7 @@ onPrepare prep = safely $
 onPropose :: (Decreeable d) => Proposal d -> Paxos d (Vote d)
 onPropose prop = safely $ do
   ballotNumber <- getNextExpectedBallotNumber
+  traceM $ "Checking proposed " ++ show (proposedBallotNumber prop) ++ " against expected " ++ show ballotNumber
   if ballotNumber == proposedBallotNumber prop
     then do
       let instanceId = proposalInstanceId prop
@@ -198,18 +207,18 @@ onPropose prop = safely $ do
             voteDecree = decree
           }
       setLastVote vote
-      return vote
+      return Assent
     else
       return Dissent {
           dissentInstanceId = proposalInstanceId prop,
           dissentBallotNumber = ballotNumber
         }
 
-onAccept :: (Decreeable d) => Decree d -> Paxos d (Decree d)
+onAccept :: (Decreeable d) => Decree d -> Paxos d Bool
 onAccept d = do
   safely $ modify $ \ledger ->
     ledger { acceptedDecree = Just d}
-  return d
+  return True
 
 ---
 --- Ledger functions
@@ -231,6 +240,15 @@ getNextProposedBallotNumber = PaxosSTM $ \vLedger -> do
   ledger <- readTVar vLedger
   return $ lastProposedBallotNumber ledger
 
+setNextProposedBallotNumber :: BallotNumber -> PaxosSTM d ()
+setNextProposedBallotNumber nextBallotNumber =
+  modify $ \ledger ->
+    let nextProposed = lastProposedBallotNumber ledger
+        newLastProposed = max nextProposed nextBallotNumber
+    in ledger {
+      lastProposedBallotNumber = trace ("Setting proposed to " ++ show newLastProposed) newLastProposed
+      }
+
 getNextExpectedBallotNumber :: PaxosSTM d BallotNumber
 getNextExpectedBallotNumber = PaxosSTM $ \vLedger -> do
   ledger <- readTVar vLedger
@@ -247,8 +265,9 @@ setNextExpectedBallotNumber :: BallotNumber -> PaxosSTM d ()
 setNextExpectedBallotNumber nextBallotNumber =
   modify $ \ledger ->
     let nextExpected = nextExpectedBallotNumber ledger
+        newNextExpected = max nextExpected nextBallotNumber
     in ledger {
-      nextExpectedBallotNumber = max nextExpected nextBallotNumber
+      nextExpectedBallotNumber = trace ("Setting expected to " ++ show newNextExpected) newNextExpected
       }
 
 get :: PaxosSTM d (Ledger d)

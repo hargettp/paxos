@@ -37,7 +37,7 @@ import qualified Network.RPC as R
 import qualified Data.Map as M
 import Data.Serialize
 
-import Debug.Trace
+-- import Debug.Trace
 
 --------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -72,14 +72,14 @@ hear endpoint name method = do
 
 hearTimeout :: (Serialize a, Serialize r) => Endpoint -> Name -> Method -> Int -> IO (Maybe (a, Reply r))
 hearTimeout endpoint name method timeout = do
-  traceIO $ "listening for " ++ show method ++ " on " ++ show name
+  -- traceIO $ "listening for " ++ show method ++ " on " ++ show name
   req <- selectMessageTimeout endpoint timeout $ typedMethodSelector method
   case req of
     Just (caller,rid,args) -> do
-      traceIO $ "heard " ++ show method ++ " on " ++ show name
+      -- traceIO $ "heard " ++ show method ++ " on " ++ show name
       return $ Just (args, reply caller rid)
     Nothing -> do
-      traceIO $ "did not hear " ++ method ++ " on " ++ show name
+      -- traceIO $ "did not hear " ++ method ++ " on " ++ show name
       return Nothing
   where
   reply caller rid result = sendMessage endpoint caller $ encode $ Response rid name $ encode result

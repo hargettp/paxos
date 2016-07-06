@@ -122,12 +122,12 @@ data Protocol d = (Decreeable d) => Protocol {
   -- leader methods
   prepare :: Members -> Prepare -> Paxos d (Votes d),
   propose :: Members -> Proposal d-> Paxos d (Votes d),
-  accept :: Members -> Decree d -> Paxos d (M.Map MemberId (Maybe ())),
+  accept :: Members -> Decree d -> Paxos d (M.Map MemberId (Maybe Bool)),
 
   -- follower methods
   expectPrepare :: (Prepare -> Paxos d (Vote d)) -> Paxos d Bool,
   expectPropose :: (Proposal d -> Paxos d (Vote d)) -> Paxos d Bool,
-  expectAccept :: (Decree d -> Paxos d (Decree d)) -> Paxos d (Maybe (Decree d))
+  expectAccept :: (Decree d -> Paxos d Bool) -> Paxos d Bool
 }
 
 data Petition d = (Decreeable d) => Petition {
@@ -136,13 +136,15 @@ data Petition d = (Decreeable d) => Petition {
   petitionDecree :: d
 }
 
+deriving instance Show (Petition d)
+
 {-|
 Eq. to NextBallot in basic protocol
 -}
 data Prepare = Prepare {
   prepareInstanceId :: InstanceId,
   tentativeBallotNumber :: BallotNumber
-} deriving (Generic)
+} deriving (Generic,Show)
 
 instance Serialize Prepare
 
@@ -211,6 +213,8 @@ data Proposal d =  Proposal {
   proposedBallotNumber :: BallotNumber,
   proposedDecree :: Decree d
 } deriving Generic
+
+deriving instance (Decreeable d) => Show (Proposal d)
 
 instance (Decreeable d) => Serialize (Proposal d)
 

@@ -30,7 +30,7 @@ import Data.Maybe (isJust)
 import Data.Serialize
 import qualified Data.Set as S
 
-import Debug.Trace
+-- import Debug.Trace
 
 import Network.Endpoints
 import Network.RPC.Typed
@@ -54,7 +54,7 @@ protocol endpoint members name = Protocol {
   accept = pcall endpoint members name "accept",
   expectPrepare = pack endpoint name "prepare",
   expectPropose = pack endpoint name "propose",
-  expectAccept = phear endpoint name "accept"
+  expectAccept = pack endpoint name "accept"
 }
 
 {-|
@@ -66,9 +66,9 @@ pcall endpoint memberNames name method m args = io $ do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems m) memberNames
       names = M.elems members
-  traceIO $ "pcalling " ++ show method ++ " on " ++ show name ++ " to " ++ show names
+  -- traceIO $ "pcalling " ++ show method ++ " on " ++ show name ++ " to " ++ show names
   responses <- gcallWithTimeout cs names method pcallTimeout args
-  traceIO $ "pcalling " ++ show method ++ " on " ++ show name ++ " complete"
+  -- traceIO $ "pcalling " ++ show method ++ " on " ++ show name ++ " complete"
   return $ composeMaps members responses
 
 pcallTimeout :: Int
@@ -83,8 +83,8 @@ pack endpoint name method fn = do
 
 phear :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d (Maybe r)
 phear endpoint name method fn = do
-  io $ traceIO $ "expecting " ++ show method ++ " on " ++ show name
-  maybeArg <- io $ hearTimeout endpoint name method (4 * pcallTimeout)
+  -- io $ traceIO $ "expecting " ++ show method ++ " on " ++ show name
+  maybeArg <- io $ hearTimeout endpoint name method (10 * pcallTimeout)
   case maybeArg of
     Just (arg,reply) -> do
       r <- fn $! arg
