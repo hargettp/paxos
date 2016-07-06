@@ -30,7 +30,7 @@ import Data.Maybe (isJust)
 import Data.Serialize
 import qualified Data.Set as S
 
--- import Debug.Trace
+import Debug.Trace
 
 import Network.Endpoints
 import Network.RPC.Typed
@@ -45,7 +45,6 @@ memberName ledger memberNames =
   let me = paxosMemberId ledger
       Just name = M.lookup me memberNames
       in name
-
 
 protocol :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Protocol d
 protocol endpoint members name = Protocol {
@@ -88,7 +87,7 @@ phear endpoint name method fn = do
   case maybeArg of
     Just (arg,reply) -> do
       r <- fn $! arg
-      io $ reply r
+      io $ reply $ trace ("Sending " ++ method ++ " reply on " ++ show name) r
       return $ Just r
     Nothing -> return Nothing
 

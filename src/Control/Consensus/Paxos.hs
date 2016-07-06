@@ -87,7 +87,6 @@ followBasicPaxosBallot p =
       else return Nothing
     else return Nothing
 
-
 paxos :: TLedger d -> Paxos d a -> IO a
 paxos = flip runPaxos
 
@@ -160,10 +159,11 @@ acceptance p d = do
     ledger <- get
     return $ paxosMembers ledger
   responses <- accept p members d
+  -- return $ Just d
   traceM $ "Acceptance responses are " ++ show responses
   safely $ do
     ledger <- get
-    if isMajority (paxosMembers ledger) responses $ id
+    if isMajority (paxosMembers ledger) responses $ const True
       then return $ Just d
       else return Nothing
 
@@ -214,11 +214,10 @@ onPropose prop = safely $ do
           dissentBallotNumber = ballotNumber
         }
 
-onAccept :: (Decreeable d) => Decree d -> Paxos d Bool
-onAccept d = do
+onAccept :: (Decreeable d) => Decree d -> Paxos d ()
+onAccept d =
   safely $ modify $ \ledger ->
     ledger { acceptedDecree = Just d}
-  return True
 
 ---
 --- Ledger functions

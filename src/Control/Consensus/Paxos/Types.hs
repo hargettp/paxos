@@ -122,12 +122,12 @@ data Protocol d = (Decreeable d) => Protocol {
   -- leader methods
   prepare :: Members -> Prepare -> Paxos d (Votes d),
   propose :: Members -> Proposal d-> Paxos d (Votes d),
-  accept :: Members -> Decree d -> Paxos d (M.Map MemberId (Maybe Bool)),
+  accept :: Members -> Decree d -> Paxos d (M.Map MemberId (Maybe ())),
 
   -- follower methods
   expectPrepare :: (Prepare -> Paxos d (Vote d)) -> Paxos d Bool,
   expectPropose :: (Proposal d -> Paxos d (Vote d)) -> Paxos d Bool,
-  expectAccept :: (Decree d -> Paxos d Bool) -> Paxos d Bool
+  expectAccept :: (Decree d -> Paxos d ()) -> Paxos d Bool
 }
 
 data Petition d = (Decreeable d) => Petition {
