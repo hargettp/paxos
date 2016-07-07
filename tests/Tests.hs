@@ -113,8 +113,6 @@ runFollower1Ballot transport endpoint vLedger memberNames = catch (do
         let p = protocol endpoint memberNames name
         traceIO $ "starting to follow on " ++ show name
         maybeDecree <- paxos vLedger $ followBasicPaxosBallot p
-        -- TODO this is a hack, to ensure that followers' final messages actually gets delivered to the leader
-        threadDelay (100 * 1000 :: Int)
         return maybeDecree)
   (\e -> do
     traceIO $ "follower error: " ++ show (e :: SomeException)
