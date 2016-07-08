@@ -30,8 +30,6 @@ import Data.Maybe (isJust)
 import Data.Serialize
 import qualified Data.Set as S
 
-import Debug.Trace
-
 import Network.Endpoints
 import Network.RPC.Typed
 
@@ -65,13 +63,11 @@ pcall endpoint memberNames name method m args = io $ do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems m) memberNames
       names = M.elems members
-  -- traceIO $ "pcalling " ++ show method ++ " on " ++ show name ++ " to " ++ show names
   responses <- gcallWithTimeout cs names method pcallTimeout args
-  -- traceIO $ "pcalling " ++ show method ++ " on " ++ show name ++ " complete"
   return $ composeMaps members responses
 
 pcallTimeout :: Int
-pcallTimeout = 250 * 1000 -- 250ms
+pcallTimeout = 150 * 1000 -- 150ms
 
 pack :: (Instanced a, Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d Bool
 pack endpoint name method instanceId fn = do
@@ -86,7 +82,7 @@ phear endpoint name method instanceId fn = do
   case maybeArg of
     Just (arg,reply) -> do
       r <- fn $! arg
-      io $ reply $ trace ("Sending " ++ method ++ " reply on " ++ show name) r
+      io $ reply r
       return $ Just r
     Nothing -> return Nothing
 

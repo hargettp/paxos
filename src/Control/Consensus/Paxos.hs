@@ -49,8 +49,6 @@ import qualified Data.Map as M
 import Data.Maybe
 import qualified Data.Set as S
 
-import Debug.Trace
-
 import qualified System.Random as R
 
 --------------------------------------------------------------------------------
@@ -102,9 +100,7 @@ preparation proposer = do
             }
         members = paxosMembers ledger
     return (members,prep)
-  traceM $ "Preparing " ++ show prep
   votes <- prepare proposer members prep
-  io $ traceIO $ "Preparation votes are " ++ show votes
   safely $
     maxBallotNumber votes >>= setNextProposedBallotNumber
   return votes
@@ -138,9 +134,7 @@ proposition proposer d = do
           }
         members = paxosMembers ledger
     return (members,proposal,proposed)
-  traceM $ "Proposing " ++ show proposal
   votes <- propose proposer members proposal
-  io $ traceIO $ "Proposition votes are " ++ show votes
   safely $ do
     -- maxBallotNumber votes >>= setNextProposedBallotNumber
     ledger <- get
@@ -151,7 +145,6 @@ proposition proposer d = do
                (voteInstanceId vote == paxosInstanceId ledger)
             Assent -> True
             Dissent {} -> False
-    traceM $ "Vote was successful: " ++ show success
     return success
 
 acceptance :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
@@ -160,8 +153,6 @@ acceptance p d = do
     ledger <- get
     return $ paxosMembers ledger
   responses <- accept p members d
-  -- return $ Just d
-  traceM $ "Acceptance responses are " ++ show responses
   safely $ do
     ledger <- get
     if isMajority (paxosMembers ledger) responses $ const True
@@ -197,7 +188,6 @@ onPrepare prep = safely $
 onPropose :: (Decreeable d) => Proposal d -> Paxos d (Vote d)
 onPropose prop = safely $ do
   ballotNumber <- getNextExpectedBallotNumber
-  traceM $ "Checking proposed " ++ show (proposedBallotNumber prop) ++ " against expected " ++ show ballotNumber
   if ballotNumber == proposedBallotNumber prop
     then do
       let instanceId = proposalInstanceId prop
@@ -246,7 +236,7 @@ setNextProposedBallotNumber nextBallotNumber =
     let nextProposed = lastProposedBallotNumber ledger
         newLastProposed = max nextProposed nextBallotNumber
     in ledger {
-      lastProposedBallotNumber = trace ("Setting proposed to " ++ show newLastProposed) newLastProposed
+      lastProposedBallotNumber = newLastProposed
       }
 
 getNextExpectedBallotNumber :: PaxosSTM d BallotNumber
@@ -267,7 +257,7 @@ setNextExpectedBallotNumber nextBallotNumber =
     let nextExpected = nextExpectedBallotNumber ledger
         newNextExpected = max nextExpected nextBallotNumber
     in ledger {
-      nextExpectedBallotNumber = trace ("Setting expected to " ++ show newNextExpected) newNextExpected
+      nextExpectedBallotNumber = newNextExpected
       }
 
 get :: PaxosSTM d (Ledger d)
