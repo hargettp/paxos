@@ -32,7 +32,8 @@ module Control.Consensus.Paxos.Types (
   Decreeable,
   BallotNumber(..),
   InstanceId(..),
-  MemberId(..)
+  MemberId(..),
+  Instanced(..)
 
 ) where
 
@@ -125,9 +126,9 @@ data Protocol d = (Decreeable d) => Protocol {
   accept :: Members -> Decree d -> Paxos d (M.Map MemberId (Maybe ())),
 
   -- follower methods
-  expectPrepare :: (Prepare -> Paxos d (Vote d)) -> Paxos d Bool,
-  expectPropose :: (Proposal d -> Paxos d (Vote d)) -> Paxos d Bool,
-  expectAccept :: (Decree d -> Paxos d ()) -> Paxos d Bool
+  expectPrepare :: InstanceId -> (Prepare -> Paxos d (Vote d)) -> Paxos d Bool,
+  expectPropose :: InstanceId -> (Proposal d -> Paxos d (Vote d)) -> Paxos d Bool,
+  expectAccept :: InstanceId -> (Decree d -> Paxos d ()) -> Paxos d Bool
 }
 
 data Petition d = (Decreeable d) => Petition {
@@ -138,6 +139,9 @@ data Petition d = (Decreeable d) => Petition {
 
 deriving instance Show (Petition d)
 
+class Instanced m where
+  currentInstanceId :: m -> InstanceId
+
 {-|
 Eq. to NextBallot in basic protocol
 -}
@@ -147,6 +151,9 @@ data Prepare = Prepare {
 } deriving (Generic,Show)
 
 instance Serialize Prepare
+
+instance Instanced Prepare where
+  currentInstanceId = prepareInstanceId
 
 data Vote d = Dissent {
     dissentInstanceId :: InstanceId,
@@ -205,6 +212,9 @@ instance (Decreeable d) => Serialize (Decree d) where
       decreeable = decree
       }
 
+instance Instanced (Decree d) where
+  currentInstanceId = decreeInstanceId
+
 {-|
 Eq. BeginBallot in basic protocol
 -}
@@ -217,6 +227,9 @@ data Proposal d =  Proposal {
 deriving instance (Decreeable d) => Show (Proposal d)
 
 instance (Decreeable d) => Serialize (Proposal d)
+
+instance Instanced (Proposal d) where
+  currentInstanceId = proposalInstanceId
 
 newtype InstanceId = InstanceId Integer deriving (Eq, Ord, Show, Generic)
 

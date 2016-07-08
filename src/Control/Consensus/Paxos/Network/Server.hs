@@ -71,25 +71,49 @@ pcall endpoint memberNames name method m args = io $ do
   return $ composeMaps members responses
 
 pcallTimeout :: Int
-pcallTimeout = 250 * 1000 -- 150ms
+pcallTimeout = 250 * 1000 -- 250ms
 
-pack :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d Bool
-pack endpoint name method fn = do
-  maybeResult <- phear endpoint name method fn
+pack :: (Instanced a, Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d Bool
+pack endpoint name method instanceId fn = do
+  maybeResult <- phear endpoint name method instanceId fn
   case maybeResult of
     Just _ -> return True
     Nothing -> return False
 
-phear :: (Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> (a -> Paxos d r) -> Paxos d (Maybe r)
-phear endpoint name method fn = do
-  -- io $ traceIO $ "expecting " ++ show method ++ " on " ++ show name
-  maybeArg <- io $ hearTimeout endpoint name method (10 * pcallTimeout)
+phear :: (Instanced a, Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d (Maybe r)
+phear endpoint name method instanceId fn = do
+  maybeArg <- io $ phearTimeout endpoint name method instanceId (10 * pcallTimeout)
   case maybeArg of
     Just (arg,reply) -> do
       r <- fn $! arg
       io $ reply $ trace ("Sending " ++ method ++ " reply on " ++ show name) r
       return $ Just r
     Nothing -> return Nothing
+
+phearTimeout :: (Instanced a, Serialize a, Serialize r) => Endpoint -> Name -> Method -> InstanceId -> Int -> IO (Maybe (a, Reply r))
+phearTimeout endpoint name method instanceId timeout = do
+  req <- selectMessageTimeout endpoint timeout $ typedInstancedMethodSelector method instanceId
+  case req of
+    Just (caller,rid,args) ->
+      return $ Just (args, reply caller rid)
+    Nothing ->
+      return Nothing
+  where
+  reply caller rid result = sendMessage endpoint caller $ encode $ Response rid name $ encode result
+
+typedInstancedMethodSelector :: (Instanced a, Serialize a) => Method -> InstanceId -> Message -> Maybe (Name,RequestId,a)
+typedInstancedMethodSelector method instanceId msg =
+  case decode msg of
+    Left _ ->
+      Nothing
+    Right (Request rid caller rmethod bytes) ->
+      if rmethod == method
+        then case decode bytes of
+          Left _ -> Nothing
+          Right args -> if currentInstanceId args == instanceId
+            then Just (caller,rid,args)
+            else Nothing
+        else Nothing
 
 -------------------------------------------------------------------------------
 -- Utility

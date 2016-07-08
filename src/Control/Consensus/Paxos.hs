@@ -78,10 +78,11 @@ leadBasicPaxosBallot p d = do
         else return Nothing
 
 followBasicPaxosBallot :: (Decreeable d) => Protocol d -> Paxos d (Maybe (Decree d))
-followBasicPaxosBallot p =
-  expectPrepare p onPrepare >>= \prepared -> if prepared
-    then expectPropose p onPropose >>= \proposed -> if proposed
-      then expectAccept p onAccept >>= \accepted -> if accepted
+followBasicPaxosBallot p = do
+  instanceId <- safely getInstanceId
+  expectPrepare p instanceId onPrepare >>= \prepared -> if prepared
+    then expectPropose p instanceId onPropose >>= \proposed -> if proposed
+      then expectAccept p instanceId onAccept >>= \accepted -> if accepted
         then safely $ get >>= \ledger -> return $ acceptedDecree ledger
         else return Nothing
       else return Nothing
@@ -281,6 +282,11 @@ io fn = Paxos $ const fn
 safely :: PaxosSTM d a -> Paxos d a
 safely p = Paxos $ \vLedger ->
   atomically $ runPaxosSTM p vLedger
+
+getInstanceId :: PaxosSTM d InstanceId
+getInstanceId = do
+  ledger <- get
+  return $ paxosInstanceId ledger
 
 --
 -- Factories
