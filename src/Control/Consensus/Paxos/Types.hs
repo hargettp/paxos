@@ -192,7 +192,7 @@ data Decree d = (Decreeable d) => Decree {
 
 deriving instance (Show d) => Show (Decree d)
 
-instance (Decreeable d) => Eq (Decree d) where
+instance Eq (Decree d) where
   d1 == d2 =
     decreeInstanceId d1 == decreeInstanceId d2 &&
     decreeMemberId d1 == decreeMemberId d2

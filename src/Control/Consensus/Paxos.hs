@@ -61,7 +61,7 @@ Lead one ballot of voting, with one of 3 possible outcomes:
 * Another decree proposed by another `Member` is accepted
 * No decree is accepted
 -}
-leadBasicPaxosBallot :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
+leadBasicPaxosBallot :: Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
 leadBasicPaxosBallot p d = do
   earlierVotes <- preparation p
   maybeChosenDecree <- safely $ do
@@ -75,7 +75,7 @@ leadBasicPaxosBallot p d = do
         then acceptance p chosenDecree
         else return Nothing
 
-followBasicPaxosBallot :: (Decreeable d) => Protocol d -> Paxos d (Maybe (Decree d))
+followBasicPaxosBallot :: Protocol d -> Paxos d (Maybe (Decree d))
 followBasicPaxosBallot p = do
   instanceId <- safely getInstanceId
   expectPrepare p instanceId onPrepare >>= \prepared -> if prepared
@@ -89,7 +89,7 @@ followBasicPaxosBallot p = do
 paxos :: TLedger d -> Paxos d a -> IO a
 paxos = flip runPaxos
 
-preparation :: (Decreeable d) => Protocol d -> Paxos d (Votes d)
+preparation :: Protocol d -> Paxos d (Votes d)
 preparation proposer = do
   (members,prep) <- safely $ do
     b <- incrementNextProposedBallotNumber
@@ -105,7 +105,7 @@ preparation proposer = do
     maxBallotNumber votes >>= setNextProposedBallotNumber
   return votes
 
-chooseDecree :: (Decreeable d) => Members -> Decree d -> Votes d -> Maybe (Decree d)
+chooseDecree :: Members -> Decree d -> Votes d -> Maybe (Decree d)
 chooseDecree members decree votes =
   if isMajority members votes $ \vote ->
     case vote of
@@ -122,7 +122,7 @@ chooseDecree members decree votes =
     -- we didn't hear from a majority of members--we have no common decree
     else Nothing
 
-proposition :: (Decreeable d) => Protocol d -> Decree d -> Paxos d Bool
+proposition :: Protocol d -> Decree d -> Paxos d Bool
 proposition proposer d = do
   (members,proposal,proposed) <- safely $ do
     proposed <- getNextProposedBallotNumber
@@ -147,7 +147,7 @@ proposition proposer d = do
             Dissent {} -> False
     return success
 
-acceptance :: (Decreeable d) => Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
+acceptance :: Protocol d -> Decree d -> Paxos d (Maybe (Decree d))
 acceptance p d = do
   members <- safely $ do
     ledger <- get
@@ -165,7 +165,7 @@ acceptance p d = do
 
 -- callee
 
-onPrepare :: (Decreeable d) => Prepare -> Paxos d (Vote d)
+onPrepare :: Prepare -> Paxos d (Vote d)
 onPrepare prep = safely $
   get >>= \ledger -> do
     let expectedBallotNumber = nextExpectedBallotNumber ledger
@@ -185,7 +185,7 @@ onPrepare prep = safely $
           dissentBallotNumber = expectedBallotNumber
         }
 
-onPropose :: (Decreeable d) => Proposal d -> Paxos d (Vote d)
+onPropose :: Proposal d -> Paxos d (Vote d)
 onPropose prop = safely $ do
   ballotNumber <- getNextExpectedBallotNumber
   if ballotNumber == proposedBallotNumber prop
@@ -205,7 +205,7 @@ onPropose prop = safely $ do
           dissentBallotNumber = ballotNumber
         }
 
-onAccept :: (Decreeable d) => Decree d -> Paxos d ()
+onAccept :: Decree d -> Paxos d ()
 onAccept d =
   safely $ modify $ \ledger ->
     ledger { acceptedDecree = Just d}

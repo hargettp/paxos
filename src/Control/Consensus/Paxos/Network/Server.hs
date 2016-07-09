@@ -58,7 +58,7 @@ protocol endpoint members name = Protocol {
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
 will be a response for every `Member`, even if it's just `Nothing`.
 -}
-pcall :: (Decreeable d,Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Members -> a -> Paxos d (M.Map MemberId (Maybe r))
+pcall :: (Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Members -> a -> Paxos d (M.Map MemberId (Maybe r))
 pcall endpoint memberNames name method m args = io $ do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems m) memberNames
@@ -69,14 +69,14 @@ pcall endpoint memberNames name method m args = io $ do
 pcallTimeout :: Int
 pcallTimeout = 150 * 1000 -- 150ms
 
-pack :: (Instanced a, Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d Bool
+pack :: (Instanced a, Serialize a, Serialize r) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d Bool
 pack endpoint name method instanceId fn = do
   maybeResult <- phear endpoint name method instanceId fn
   case maybeResult of
     Just _ -> return True
     Nothing -> return False
 
-phear :: (Instanced a, Serialize a, Serialize r, Decreeable d) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d (Maybe r)
+phear :: (Instanced a, Serialize a, Serialize r) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d (Maybe r)
 phear endpoint name method instanceId fn = do
   maybeArg <- io $ phearTimeout endpoint name method instanceId (10 * pcallTimeout)
   case maybeArg of
