@@ -4,7 +4,7 @@
 name:                paxos
 version:             0.1.0.0
 synopsis:            Paxos distributed consensus algorithm
-tested-with:         GHC == 7.6.3, GHC == 7.8.4, GHC == 7.10.2, GHC == 7.10.3, GHC == 8.0.1
+tested-with:         GHC == 7.10.2, GHC == 7.10.3, GHC == 8.0.1
 description:         Implementation of Leslie Lamport's Paxos algorithm for distributed consensus.
 homepage:            https://github.com/hargettp/paxos
 license:             MIT
