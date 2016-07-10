@@ -1,6 +1,6 @@
 -----------------------------------------------------------------------------
 -- |
--- Module      :  Control.Consensus.Paxos.Network.Server
+-- Module      :  Control.Consensus.Paxos.Protocol.Courier
 -- Copyright   :  (c) Phil Hargett 2016
 -- License     :  MIT (see LICENSE file)
 --
@@ -11,7 +11,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Control.Consensus.Paxos.Network.Server (
+module Control.Consensus.Paxos.Protocol.Courier (
 
   MemberNames,
   memberName,

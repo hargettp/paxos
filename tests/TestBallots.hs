@@ -5,7 +5,9 @@ module TestBallots (
 -- local imports
 
 import Control.Consensus.Paxos
-import Control.Consensus.Paxos.Network.Server
+import Control.Consensus.Paxos.Protocol.Courier
+
+import Control.Consensus.Paxos.Storage.Memory
 
 import Network.Transport.Memory
 
@@ -52,9 +54,9 @@ test1Ballot = do
         decreeMemberId = mid1,
         decreeable = SetValue 1
       }
-  vLedger1 <- mkTLedger instanceId members mid1
-  vLedger2 <- mkTLedger instanceId members mid2
-  vLedger3 <- mkTLedger instanceId members mid3
+  vLedger1 <- newLedger instanceId members mid1
+  vLedger2 <- newLedger instanceId members mid2
+  vLedger3 <- newLedger instanceId members mid3
 
   endpoint1 <- newEndpoint
   endpoint2 <- newEndpoint
@@ -83,7 +85,8 @@ runFollower1Ballot transport endpoint vLedger memberNames = catch (do
     withEndpoint transport endpoint $
       withBinding transport endpoint name $ do
         let p = protocol defaultTimeouts endpoint memberNames name
-        paxos vLedger $ followBasicPaxosBallot p)
+        s <- storage
+        paxos vLedger $ followBasicPaxosBallot p s)
   (\e -> do
     traceIO $ "follower error: " ++ show (e :: SomeException)
     return Nothing)
@@ -94,7 +97,8 @@ runLeader1Ballot endpoint vLedger memberNames decree = catch (do
       ledger <- readTVar vLedger
       return $ memberName ledger memberNames
     let p = protocol defaultTimeouts endpoint memberNames name
-    paxos vLedger $ leadBasicPaxosBallot p decree)
+    s <- storage
+    paxos vLedger $ leadBasicPaxosBallot p s decree)
   (\e -> do
     traceIO $ "leader error: "  ++ show (e :: SomeException)
     return Nothing)

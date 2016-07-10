@@ -3,9 +3,6 @@ module Main where
 -- local imports
 
 import Control.Consensus.Paxos
-import Control.Consensus.Paxos.Network.Server
-
-import Network.Transport.Memory
 
 import qualified TestBallots as TB
 import qualified TestChooseDecree as TC
@@ -46,7 +43,7 @@ testLedgerFactory = do
   let instanceId = InstanceId 1
       members = S.fromList [MemberId 1, MemberId 2, MemberId 3]
       me = MemberId 1
-  vLedger <- mkTLedger instanceId members me :: IO (TLedger IntegerOperation)
+  vLedger <- newLedger instanceId members me :: IO (TLedger IntegerOperation)
   paxos vLedger $ do
     ledger <- safely get
     io $ assertEqual "instance ids" (paxosInstanceId ledger) instanceId

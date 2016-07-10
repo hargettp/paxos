@@ -24,7 +24,8 @@ source-repository head
 library
   exposed-modules:
     Control.Consensus.Paxos
-    Control.Consensus.Paxos.Network.Server
+    Control.Consensus.Paxos.Protocol.Courier
+    Control.Consensus.Paxos.Storage.Memory
     Control.Consensus.Paxos.Types
     Network.RPC.Typed
     Network.Server

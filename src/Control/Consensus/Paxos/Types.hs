@@ -20,6 +20,7 @@ module Control.Consensus.Paxos.Types (
   Paxos(..),
   PaxosSTM(..),
   Protocol(..),
+  Storage(..),
   Ledger(..),
   TLedger,
   Members(),
@@ -129,6 +130,11 @@ data Protocol d = (Decreeable d) => Protocol {
   expectPrepare :: InstanceId -> (Prepare -> Paxos d (Vote d)) -> Paxos d Bool,
   expectPropose :: InstanceId -> (Proposal d -> Paxos d (Vote d)) -> Paxos d Bool,
   expectAccept :: InstanceId -> (Decree d -> Paxos d ()) -> Paxos d Bool
+}
+
+data Storage d = (Decreeable d) => Storage {
+  loadLedger :: InstanceId -> IO (Maybe (Ledger d)),
+  saveLedger :: Ledger d -> IO ()
 }
 
 data Petition d = (Decreeable d) => Petition {
