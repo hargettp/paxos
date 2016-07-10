@@ -91,13 +91,10 @@ test1Ballot = do
         withAsync (runFollower1Ballot transport endpoint2 vLedger2 memberNames) $ \async2 ->
           withAsync (runFollower1Ballot transport endpoint3 vLedger3 memberNames) $ \async3 ->
             withConnection3 transport endpoint1 (Name $ show mid1) (Name $ show mid2) (Name $ show mid3) $ do
-              traceIO "before leading"
               threadDelay (250 * 1000 :: Int)
               leader1 <- runLeader1Ballot endpoint1 vLedger1 memberNames decree
-              traceIO "before waiting on followers"
               follower1 <- wait async1
               (follower2,follower3) <- waitBoth async2 async3
-              traceIO $ "Results are : " ++ show leader1 ++ " " ++ show follower1 ++ " "++ show follower2 ++ " "++ show follower3 ++ " "
               assertBool "expected leader decree" $ leader1 == Just decree
               assertBool "expected follower2 decree" $ leader1 == follower1
               assertBool "expected follower2 decree" $ follower1 == follower2
@@ -110,10 +107,8 @@ runFollower1Ballot transport endpoint vLedger memberNames = catch (do
       return $ memberName ledger memberNames
     withEndpoint transport endpoint $
       withBinding transport endpoint name $ do
-        let p = protocol endpoint memberNames name
-        traceIO $ "starting to follow on " ++ show name
-        maybeDecree <- paxos vLedger $ followBasicPaxosBallot p
-        return maybeDecree)
+        let p = protocol defaultTimeouts endpoint memberNames name
+        paxos vLedger $ followBasicPaxosBallot p)
   (\e -> do
     traceIO $ "follower error: " ++ show (e :: SomeException)
     return Nothing)
@@ -123,8 +118,7 @@ runLeader1Ballot endpoint vLedger memberNames decree = catch (do
     name <- atomically $ do
       ledger <- readTVar vLedger
       return $ memberName ledger memberNames
-    let p = protocol endpoint memberNames name
-    traceIO $ "starting to lead : " ++ show name
+    let p = protocol defaultTimeouts endpoint memberNames name
     paxos vLedger $ leadBasicPaxosBallot p decree)
   (\e -> do
     traceIO $ "leader error: "  ++ show (e :: SomeException)

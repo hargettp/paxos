@@ -15,7 +15,10 @@ module Control.Consensus.Paxos.Network.Server (
 
   MemberNames,
   memberName,
-  protocol
+  protocol,
+
+  Timeouts(..),
+  defaultTimeouts
 
 ) where
 
@@ -38,47 +41,57 @@ import Network.RPC.Typed
 
 type MemberNames = M.Map MemberId Name
 
+data Timeouts = Timeouts {
+  leaderTimeout :: Int,
+  followerTimeout :: Int
+}
+
+defaultTimeouts :: Timeouts
+defaultTimeouts =
+  let baseTimeout = 250 * 1000 -- 250ms
+  in Timeouts {
+    leaderTimeout = baseTimeout,
+    followerTimeout = 10 * baseTimeout
+  }
+
 memberName :: Ledger d -> MemberNames -> Name
 memberName ledger memberNames =
   let me = paxosMemberId ledger
       Just name = M.lookup me memberNames
       in name
 
-protocol :: (Decreeable d) => Endpoint -> MemberNames -> Name -> Protocol d
-protocol endpoint members name = Protocol {
-  prepare = pcall endpoint members name "prepare",
-  propose = pcall endpoint members name "propose",
-  accept = pcall endpoint members name "accept",
-  expectPrepare = pack endpoint name "prepare",
-  expectPropose = pack endpoint name "propose",
-  expectAccept = pack endpoint name "accept"
+protocol :: (Decreeable d) => Timeouts -> Endpoint -> MemberNames -> Name -> Protocol d
+protocol timeouts endpoint members name = Protocol {
+  prepare = pcall timeouts endpoint members name "prepare",
+  propose = pcall timeouts endpoint members name "propose",
+  accept = pcall timeouts endpoint members name "accept",
+  expectPrepare = pack timeouts endpoint name "prepare",
+  expectPropose = pack timeouts endpoint name "propose",
+  expectAccept = pack timeouts endpoint name "accept"
 }
 
 {-|
 Invoke a method on members of the Paxos instance. Because of the semantics of `gcallWithTimeout`, there
 will be a response for every `Member`, even if it's just `Nothing`.
 -}
-pcall :: (Serialize a,Serialize r) => Endpoint -> MemberNames -> Name -> String -> Members -> a -> Paxos d (M.Map MemberId (Maybe r))
-pcall endpoint memberNames name method m args = io $ do
+pcall :: (Serialize a,Serialize r) => Timeouts -> Endpoint -> MemberNames -> Name -> String -> Members -> a -> Paxos d (M.Map MemberId (Maybe r))
+pcall timeouts endpoint memberNames name method m args = io $ do
   let cs = newCallSite endpoint name
       members = lookupMany (S.elems m) memberNames
       names = M.elems members
-  responses <- gcallWithTimeout cs names method pcallTimeout args
+  responses <- gcallWithTimeout cs names method (leaderTimeout timeouts) args
   return $ composeMaps members responses
 
-pcallTimeout :: Int
-pcallTimeout = 150 * 1000 -- 150ms
-
-pack :: (Instanced a, Serialize a, Serialize r) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d Bool
-pack endpoint name method instanceId fn = do
-  maybeResult <- phear endpoint name method instanceId fn
+pack :: (Instanced a, Serialize a, Serialize r) => Timeouts -> Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d Bool
+pack timeouts endpoint name method instanceId fn = do
+  maybeResult <- phear timeouts endpoint name method instanceId fn
   case maybeResult of
     Just _ -> return True
     Nothing -> return False
 
-phear :: (Instanced a, Serialize a, Serialize r) => Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d (Maybe r)
-phear endpoint name method instanceId fn = do
-  maybeArg <- io $ phearTimeout endpoint name method instanceId (10 * pcallTimeout)
+phear :: (Instanced a, Serialize a, Serialize r) => Timeouts -> Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d (Maybe r)
+phear timeouts endpoint name method instanceId fn = do
+  maybeArg <- io $ phearTimeout endpoint name method instanceId (followerTimeout timeouts)
   case maybeArg of
     Just (arg,reply) -> do
       r <- fn $! arg
