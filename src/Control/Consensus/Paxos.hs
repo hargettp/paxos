@@ -318,22 +318,18 @@ mkMemberId = fmap MemberId R.randomIO
 
 newInstance :: (Decreeable d) => InstanceId -> Members -> MemberId -> IO (Instance d)
 newInstance instId members me = do
-  let ledger = mkLedger members
-  inst <- atomically $ newTVar ledger
-  return Instance {
-    instanceId = instId,
-    instanceMe = me,
-    instanceLedger = inst
-  }
-
-mkLedger :: (Decreeable d) => Members -> Ledger d
-mkLedger members =
-  Ledger {
+  let ledger = Ledger {
     paxosMembers = members,
     lastProposedBallotNumber = BallotNumber 0,
     nextExpectedBallotNumber = BallotNumber 0,
     lastVote = Nothing,
     acceptedDecree = Nothing
+  }
+  inst <- atomically $ newTVar ledger
+  return Instance {
+    instanceId = instId,
+    instanceMe = me,
+    instanceLedger = inst
   }
 
 --
