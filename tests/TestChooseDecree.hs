@@ -28,14 +28,14 @@ tests = [
 
 testNoExistingDecree :: Assertion
 testNoExistingDecree = do
-  let instanceId = InstanceId 1
+  let instId = InstanceId 1
       mid1 = MemberId 1
       mid2 = MemberId 2
       mid3 = MemberId 3
       members = S.fromList [mid1, mid2, mid3]
       votes = M.fromList [(mid1, Nothing),(mid2, Nothing),(mid3, Nothing)]
       decree = Decree {
-        decreeInstanceId = instanceId,
+        decreeInstanceId = instId,
         decreeMemberId = mid1,
         decreeable = SetValue 1
       }

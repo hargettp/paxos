@@ -39,10 +39,10 @@ storage = do
     }
 
 memoryLoad :: MemoryStore d -> InstanceId -> IO (Maybe (Ledger d))
-memoryLoad store instanceId = atomically $ do
+memoryLoad store instId = atomically $ do
   ledgers <- readTVar store
-  return $ M.lookup instanceId ledgers
+  return $ M.lookup instId ledgers
 
-memorySave :: MemoryStore d -> Ledger d -> IO ()
-memorySave store ledger = atomically $
-  modifyTVar store $ \ledgers -> M.insert (paxosInstanceId ledger) ledger ledgers
+memorySave :: MemoryStore d -> InstanceId -> Ledger d -> IO ()
+memorySave store instId ledger = atomically $
+  modifyTVar store $ \ledgers -> M.insert instId ledger ledgers

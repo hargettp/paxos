@@ -32,7 +32,7 @@ module Control.Consensus.Paxos (
   safely,
 
   mkMemberId,
-  newLedger,
+  newInstance,
 
   isMajority,
   chooseDecree,
@@ -80,16 +80,16 @@ leadBasicPaxosBallot p s d = do
 
 followBasicPaxosBallot :: Protocol d -> Storage d -> Paxos d (Maybe (Decree d))
 followBasicPaxosBallot p s = do
-  instanceId <- safely getInstanceId
-  expectPrepare p instanceId (onPrepare s) >>= \prepared -> if prepared
-    then expectPropose p instanceId (onPropose s) >>= \proposed -> if proposed
-      then expectAccept p instanceId (onAccept s) >>= \accepted -> if accepted
+  instId <- safely getInstanceId
+  expectPrepare p instId (onPrepare s) >>= \prepared -> if prepared
+    then expectPropose p instId (onPropose s) >>= \proposed -> if proposed
+      then expectAccept p instId (onAccept s) >>= \accepted -> if accepted
         then safely $ get >>= \ledger -> return $ acceptedDecree ledger
         else return Nothing
       else return Nothing
     else return Nothing
 
-paxos :: TLedger d -> Paxos d a -> IO a
+paxos :: Instance d -> Paxos d a -> IO a
 paxos = flip runPaxos
 
 preparation :: Protocol d -> Storage d -> Paxos d (Votes d)
@@ -97,8 +97,9 @@ preparation p s = do
   (members,prep) <- safely $ do
     b <- incrementNextProposedBallotNumber
     ledger <- get
+    instId <- getInstanceId
     let prep = Prepare {
-            prepareInstanceId = paxosInstanceId ledger,
+            prepareInstanceId = instId,
             tentativeBallotNumber = b
             }
         members = paxosMembers ledger
@@ -128,16 +129,17 @@ chooseDecree members decree votes =
 
 proposition :: Protocol d -> Decree d -> Paxos d Bool
 proposition p d = do
-  (members,proposal,proposed) <- safely $ do
+  (instId,members,proposal,proposed) <- safely $ do
     proposed <- getNextProposedBallotNumber
     ledger <- get
+    instId <- getInstanceId
     let proposal = Proposal {
-          proposalInstanceId = paxosInstanceId ledger,
+          proposalInstanceId = instId,
           proposedBallotNumber = proposed,
           proposedDecree = d
           }
         members = paxosMembers ledger
-    return (members,proposal,proposed)
+    return (instId,members,proposal,proposed)
   votes <- propose p members proposal
   safely $ do
     -- maxBallotNumber votes >>= setNextProposedBallotNumber
@@ -146,7 +148,7 @@ proposition p d = do
           case vote of
             Vote {} ->
               (voteBallotNumber vote == proposed) &&
-               (voteInstanceId vote == paxosInstanceId ledger)
+               (voteInstanceId vote == instId)
             Assent -> True
             Dissent {} -> False
     return success
@@ -171,7 +173,8 @@ acceptance p d = do
 
 onPrepare :: Storage d -> Prepare -> Paxos d (Vote d)
 onPrepare s prep = do
-  vote <- safely $
+  vote <- safely $ do
+    instId <- getInstanceId
     get >>= \ledger -> do
       let expectedBallotNumber = nextExpectedBallotNumber ledger
           preparedBallotNumber = tentativeBallotNumber prep
@@ -186,7 +189,7 @@ onPrepare s prep = do
               return Assent
         else
           return Dissent {
-            dissentInstanceId = paxosInstanceId ledger,
+            dissentInstanceId = instId,
             dissentBallotNumber = expectedBallotNumber
           }
   save s
@@ -198,10 +201,10 @@ onPropose s prop = do
     ballotNumber <- getNextExpectedBallotNumber
     if ballotNumber == proposedBallotNumber prop
       then do
-        let instanceId = proposalInstanceId prop
+        let instId = proposalInstanceId prop
             decree = proposedDecree prop
             vote = Vote {
-              voteInstanceId = instanceId,
+              voteInstanceId = instId,
               voteBallotNumber = ballotNumber,
               voteDecree = decree
             }
@@ -226,19 +229,19 @@ onAccept s d = do
 ---
 
 incrementNextProposedBallotNumber :: PaxosSTM d BallotNumber
-incrementNextProposedBallotNumber = PaxosSTM $ \vLedger -> do
-  ledger <- readTVar vLedger
+incrementNextProposedBallotNumber = PaxosSTM $ \inst -> do
+  ledger <- readTVar $ instanceLedger inst
   let BallotNumber lastProposed = lastProposedBallotNumber ledger
       BallotNumber nextExpected = nextExpectedBallotNumber ledger
       newBallotNumber = BallotNumber $ 1 + max lastProposed nextExpected
-  writeTVar vLedger ledger {
+  writeTVar (instanceLedger inst) ledger {
       lastProposedBallotNumber = newBallotNumber
       }
   return newBallotNumber
 
 getNextProposedBallotNumber :: PaxosSTM d BallotNumber
-getNextProposedBallotNumber = PaxosSTM $ \vLedger -> do
-  ledger <- readTVar vLedger
+getNextProposedBallotNumber = PaxosSTM $ \inst -> do
+  ledger <- readTVar $ instanceLedger inst
   return $ lastProposedBallotNumber ledger
 
 setNextProposedBallotNumber :: BallotNumber -> PaxosSTM d ()
@@ -251,8 +254,8 @@ setNextProposedBallotNumber nextBallotNumber =
       }
 
 getNextExpectedBallotNumber :: PaxosSTM d BallotNumber
-getNextExpectedBallotNumber = PaxosSTM $ \vLedger -> do
-  ledger <- readTVar vLedger
+getNextExpectedBallotNumber = PaxosSTM $ \inst -> do
+  ledger <- readTVar $ instanceLedger inst
   return $ nextExpectedBallotNumber ledger
 
 setLastVote :: Vote d -> PaxosSTM d ()
@@ -272,40 +275,39 @@ setNextExpectedBallotNumber nextBallotNumber =
       }
 
 get :: PaxosSTM d (Ledger d)
-get = PaxosSTM readTVar
+get = PaxosSTM (readTVar . instanceLedger)
 
 set :: Ledger d -> PaxosSTM d ()
-set ledger = PaxosSTM $ flip writeTVar ledger
+set ledger = PaxosSTM $ \inst -> writeTVar (instanceLedger inst) ledger
 
 modify :: (Ledger d -> Ledger d) -> PaxosSTM d ()
-modify fn = PaxosSTM $ \vLedger -> modifyTVar vLedger fn
+modify fn = PaxosSTM $ \inst -> modifyTVar (instanceLedger inst) fn
 
 io :: IO a -> Paxos d a
 io fn = Paxos $ const fn
 
 safely :: PaxosSTM d a -> Paxos d a
-safely p = Paxos $ \vLedger ->
-  atomically $ runPaxosSTM p vLedger
+safely p = Paxos $ \inst ->
+  atomically $ runPaxosSTM p inst
 
 getInstanceId :: PaxosSTM d InstanceId
-getInstanceId = do
-  ledger <- get
-  return $ paxosInstanceId ledger
+getInstanceId = PaxosSTM $ return . instanceId
 
 load :: Storage d -> Paxos d ()
 load storage = do
-  instanceId <- safely $ do
-    ledger <- get
-    return $ paxosInstanceId ledger
-  maybeLedger <- io $ loadLedger storage instanceId
+  instId <- safely getInstanceId
+  maybeLedger <- io $ loadLedger storage instId
   case maybeLedger of
     Just ledger -> safely $ set ledger
     Nothing -> return ()
 
 save :: Storage d -> Paxos d ()
 save storage = do
-  ledger <- safely get
-  io $ saveLedger storage ledger
+  (instId, ledger) <- safely $ do
+    ledger <- get
+    instId <- getInstanceId
+    return (instId, ledger)
+  io $ saveLedger storage instId ledger
 
 --
 -- Factories
@@ -314,17 +316,20 @@ save storage = do
 mkMemberId :: IO MemberId
 mkMemberId = fmap MemberId R.randomIO
 
-newLedger :: (Decreeable d) => InstanceId -> Members -> MemberId -> IO (TLedger d)
-newLedger instanceId members me = do
-  let ledger = mkLedger instanceId members me
-  atomically $ newTVar ledger
+newInstance :: (Decreeable d) => InstanceId -> Members -> MemberId -> IO (Instance d)
+newInstance instId members me = do
+  let ledger = mkLedger members
+  inst <- atomically $ newTVar ledger
+  return Instance {
+    instanceId = instId,
+    instanceMe = me,
+    instanceLedger = inst
+  }
 
-mkLedger :: (Decreeable d) => InstanceId -> Members -> MemberId -> Ledger d
-mkLedger instanceId members me =
+mkLedger :: (Decreeable d) => Members -> Ledger d
+mkLedger members =
   Ledger {
-    paxosInstanceId = instanceId,
     paxosMembers = members,
-    paxosMemberId = me,
     lastProposedBallotNumber = BallotNumber 0,
     nextExpectedBallotNumber = BallotNumber 0,
     lastVote = Nothing,

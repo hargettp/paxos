@@ -54,9 +54,9 @@ defaultTimeouts =
     followerTimeout = 10 * baseTimeout
   }
 
-memberName :: Ledger d -> MemberNames -> Name
-memberName ledger memberNames =
-  let me = paxosMemberId ledger
+memberName :: Instance d -> MemberNames -> Name
+memberName inst memberNames =
+  let me = instanceMe inst
       Just name = M.lookup me memberNames
       in name
 
@@ -83,15 +83,15 @@ pcall timeouts endpoint memberNames name method m args = io $ do
   return $ composeMaps members responses
 
 pack :: (Instanced a, Serialize a, Serialize r) => Timeouts -> Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d Bool
-pack timeouts endpoint name method instanceId fn = do
-  maybeResult <- phear timeouts endpoint name method instanceId fn
+pack timeouts endpoint name method instId fn = do
+  maybeResult <- phear timeouts endpoint name method instId fn
   case maybeResult of
     Just _ -> return True
     Nothing -> return False
 
 phear :: (Instanced a, Serialize a, Serialize r) => Timeouts -> Endpoint -> Name -> Method -> InstanceId -> (a -> Paxos d r) -> Paxos d (Maybe r)
-phear timeouts endpoint name method instanceId fn = do
-  maybeArg <- io $ phearTimeout endpoint name method instanceId (followerTimeout timeouts)
+phear timeouts endpoint name method instId fn = do
+  maybeArg <- io $ phearTimeout endpoint name method instId (followerTimeout timeouts)
   case maybeArg of
     Just (arg,reply) -> do
       r <- fn $! arg
@@ -100,8 +100,8 @@ phear timeouts endpoint name method instanceId fn = do
     Nothing -> return Nothing
 
 phearTimeout :: (Instanced a, Serialize a, Serialize r) => Endpoint -> Name -> Method -> InstanceId -> Int -> IO (Maybe (a, Reply r))
-phearTimeout endpoint name method instanceId timeout = do
-  req <- selectMessageTimeout endpoint timeout $ typedInstancedMethodSelector method instanceId
+phearTimeout endpoint name method instId timeout = do
+  req <- selectMessageTimeout endpoint timeout $ typedInstancedMethodSelector method instId
   case req of
     Just (caller,rid,args) ->
       return $ Just (args, reply caller rid)
@@ -111,7 +111,7 @@ phearTimeout endpoint name method instanceId timeout = do
   reply caller rid result = sendMessage endpoint caller $ encode $ Response rid name $ encode result
 
 typedInstancedMethodSelector :: (Instanced a, Serialize a) => Method -> InstanceId -> Message -> Maybe (Name,RequestId,a)
-typedInstancedMethodSelector method instanceId msg =
+typedInstancedMethodSelector method instId msg =
   case decode msg of
     Left _ ->
       Nothing
@@ -119,7 +119,7 @@ typedInstancedMethodSelector method instanceId msg =
       if rmethod == method
         then case decode bytes of
           Left _ -> Nothing
-          Right args -> if currentInstanceId args == instanceId
+          Right args -> if currentInstanceId args == instId
             then Just (caller,rid,args)
             else Nothing
         else Nothing

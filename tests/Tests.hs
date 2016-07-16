@@ -26,7 +26,7 @@ main = defaultMain allTests
 allTests :: [Test.Framework.Test]
 allTests = [
   testCase "member-id" testMemberIdFactory,
-  testCase "ledger" testLedgerFactory
+  testCase "ledger" tesInstanceFactory
   ]
   ++ TB.tests
   ++ TM.tests
@@ -38,14 +38,14 @@ testMemberIdFactory = do
   mid2 <- mkMemberId
   assertBool "All member Ids are unique" $ mid1 /= mid2
 
-testLedgerFactory :: Assertion
-testLedgerFactory = do
-  let instanceId = InstanceId 1
+tesInstanceFactory :: Assertion
+tesInstanceFactory = do
+  let instId = InstanceId 1
       members = S.fromList [MemberId 1, MemberId 2, MemberId 3]
       me = MemberId 1
-  vLedger <- newLedger instanceId members me :: IO (TLedger IntegerOperation)
-  paxos vLedger $ do
+  inst <- newInstance instId members me :: IO (Instance IntegerOperation)
+  paxos inst $ do
     ledger <- safely get
-    io $ assertEqual "instance ids" (paxosInstanceId ledger) instanceId
+    io $ assertEqual "instance ids" (instanceId inst) instId
     io $ assertEqual "members" (paxosMembers ledger) members
-    io $ assertEqual "me" (paxosMemberId ledger) me
+    io $ assertEqual "me" (instanceMe inst) me

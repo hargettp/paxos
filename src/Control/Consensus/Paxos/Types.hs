@@ -22,7 +22,7 @@ module Control.Consensus.Paxos.Types (
   Protocol(..),
   Storage(..),
   Ledger(..),
-  TLedger,
+  Instance(..),
   Members(),
   Vote(..),
   Votes,
@@ -54,7 +54,7 @@ import GHC.Generics
 --------------------------------------------------------------------------------
 
 data Paxos d a = Paxos {
-  runPaxos :: TLedger d -> IO a
+  runPaxos :: Instance d -> IO a
 }
 
 instance Functor (Paxos d) where
@@ -79,7 +79,7 @@ instance Monad (Paxos d) where
     runPaxos pb l
 
 data PaxosSTM d a = PaxosSTM {
-  runPaxosSTM :: TLedger d -> STM a
+  runPaxosSTM :: Instance d -> STM a
 }
 
 instance Functor (PaxosSTM d) where
@@ -104,9 +104,7 @@ instance Monad (PaxosSTM d) where
     runPaxosSTM pb vl
 
 data Ledger d = (Decreeable d) => Ledger {
-  paxosInstanceId :: InstanceId,
   paxosMembers :: Members,
-  paxosMemberId :: MemberId,
   -- leader fields
   -- | The last proposal made by this member
   lastProposedBallotNumber :: BallotNumber, -- ^ this is lastTried[p]
@@ -116,7 +114,11 @@ data Ledger d = (Decreeable d) => Ledger {
   acceptedDecree :: Maybe (Decree d)
 }
 
-type TLedger d = TVar (Ledger d)
+data Instance d = Instance {
+  instanceId :: InstanceId,
+  instanceMe :: MemberId,
+  instanceLedger :: TVar (Ledger d)
+}
 
 type Members = S.Set MemberId
 
@@ -134,7 +136,7 @@ data Protocol d = (Decreeable d) => Protocol {
 
 data Storage d = (Decreeable d) => Storage {
   loadLedger :: InstanceId -> IO (Maybe (Ledger d)),
-  saveLedger :: Ledger d -> IO ()
+  saveLedger :: InstanceId ->  Ledger d -> IO ()
 }
 
 data Petition d = (Decreeable d) => Petition {
@@ -209,11 +211,11 @@ instance (Decreeable d) => Serialize (Decree d) where
     put $ decreeMemberId d
     put $ decreeable d
   get = do
-    instanceId <- get
+    instId <- get
     memberId <- get
     decree <- get
     return Decree {
-      decreeInstanceId = instanceId,
+      decreeInstanceId = instId,
       decreeMemberId = memberId,
       decreeable = decree
       }
