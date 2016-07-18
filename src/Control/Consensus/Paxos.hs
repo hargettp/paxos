@@ -129,7 +129,7 @@ chooseDecree members decree votes =
 
 proposition :: Protocol d -> Decree d -> Paxos d Bool
 proposition p d = do
-  (instId,members,proposal,proposed) <- safely $ do
+  (members,proposal,proposed) <- safely $ do
     proposed <- getNextProposedBallotNumber
     ledger <- get
     instId <- getInstanceId
@@ -139,16 +139,14 @@ proposition p d = do
           proposedDecree = d
           }
         members = paxosMembers ledger
-    return (instId,members,proposal,proposed)
+    return (members,proposal,proposed)
   votes <- propose p members proposal
   safely $ do
     -- maxBallotNumber votes >>= setNextProposedBallotNumber
     ledger <- get
     let success = isMajority (paxosMembers ledger) votes $ \vote ->
           case vote of
-            Vote {} ->
-              (voteBallotNumber vote == proposed) &&
-               (voteInstanceId vote == instId)
+            Vote {} -> voteBallotNumber vote == proposed
             Assent -> True
             Dissent {} -> False
     return success
@@ -173,8 +171,7 @@ acceptance p d = do
 
 onPrepare :: Storage d -> Prepare -> Paxos d (Vote d)
 onPrepare s prep = do
-  vote <- safely $ do
-    instId <- getInstanceId
+  vote <- safely $
     get >>= \ledger -> do
       let expectedBallotNumber = nextExpectedBallotNumber ledger
           preparedBallotNumber = tentativeBallotNumber prep
@@ -189,7 +186,6 @@ onPrepare s prep = do
               return Assent
         else
           return Dissent {
-            dissentInstanceId = instId,
             dissentBallotNumber = expectedBallotNumber
           }
   save s
@@ -201,10 +197,8 @@ onPropose s prop = do
     ballotNumber <- getNextExpectedBallotNumber
     if ballotNumber == proposedBallotNumber prop
       then do
-        let instId = proposalInstanceId prop
-            decree = proposedDecree prop
+        let decree = proposedDecree prop
             vote = Vote {
-              voteInstanceId = instId,
               voteBallotNumber = ballotNumber,
               voteDecree = decree
             }
@@ -212,7 +206,6 @@ onPropose s prop = do
         return Assent
       else
         return Dissent {
-            dissentInstanceId = proposalInstanceId prop,
             dissentBallotNumber = ballotNumber
           }
   save s

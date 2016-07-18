@@ -164,12 +164,10 @@ instance Instanced Prepare where
   currentInstanceId = prepareInstanceId
 
 data Vote d = Dissent {
-    dissentInstanceId :: InstanceId,
     dissentBallotNumber :: BallotNumber
   } |
   Assent |
   Vote {
-    voteInstanceId :: InstanceId,
     voteBallotNumber :: BallotNumber,
     voteDecree :: Decree d
     }
@@ -179,8 +177,8 @@ instance Eq (Vote d) where
   a == b = voteBallotNumber a == voteBallotNumber b
 
 instance Ord (Vote d) where
-  Dissent _ _ <= _ = True
-  _ <= Dissent _ _ = False
+  Dissent _ <= _ = True
+  _ <= Dissent _ = False
   Assent <= _ = True
   _ <= Assent = False
   a <= b = voteBallotNumber a <= voteBallotNumber b
