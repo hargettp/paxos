@@ -17,6 +17,7 @@ import SimpleDecree
 
 import Control.Concurrent
 import Control.Concurrent.Async
+import Control.Concurrent.STM
 import Control.Exception
 
 import qualified Data.Map as M
@@ -57,18 +58,20 @@ test1Ballot = do
   inst2 <- newInstance instId members mid2
   inst3 <- newInstance instId members mid3
 
+  rv <- rendezvous 4 -- 1 leader + 3 followers
+
   endpoint1 <- newEndpoint
   endpoint2 <- newEndpoint
   endpoint3 <- newEndpoint
 
   timeBound maxTestRun $
     withTransport newMemoryTransport $ \transport ->
-      withAsync (runFollower1Ballot transport endpoint1 inst1 memberNames) $ \async1 ->
-        withAsync (runFollower1Ballot transport endpoint2 inst2 memberNames) $ \async2 ->
-          withAsync (runFollower1Ballot transport endpoint3 inst3 memberNames) $ \async3 ->
+      withAsync (runFollower1Ballot rv transport endpoint1 inst1 memberNames) $ \async1 ->
+        withAsync (runFollower1Ballot rv transport endpoint2 inst2 memberNames) $ \async2 ->
+          withAsync (runFollower1Ballot rv transport endpoint3 inst3 memberNames) $ \async3 ->
             withConnection3 transport endpoint1 (Name $ show mid1) (Name $ show mid2) (Name $ show mid3) $ do
               threadDelay (500 * 1000 :: Int)
-              leader1 <- runLeader1Ballot endpoint1 inst1 memberNames decree
+              leader1 <- runLeader1Ballot rv endpoint1 inst1 memberNames decree
               follower1 <- wait async1
               (follower2,follower3) <- waitBoth async2 async3
               assertBool "expected leader decree" $ leader1 == Just decree
@@ -76,24 +79,30 @@ test1Ballot = do
               assertBool "expected follower2 decree" $ follower1 == follower2
               assertBool "expected follower3 decree" $ follower2 == follower3
 
-runFollower1Ballot :: (Decreeable d) => Transport -> Endpoint -> Instance d -> MemberNames -> IO (Maybe (Decree d))
-runFollower1Ballot transport endpoint inst memberNames = catch (do
+runFollower1Ballot :: (Decreeable d) => Rendezvous -> Transport -> Endpoint -> Instance d -> MemberNames -> IO (Maybe (Decree d))
+runFollower1Ballot rv transport endpoint inst memberNames = catch (do
     let name = memberName inst memberNames
     withEndpoint transport endpoint $
       withBinding transport endpoint name $ do
         let p = protocol defaultTimeouts endpoint memberNames name
         s <- storage
-        paxos inst $ followBasicPaxosBallot p s)
+        meet rv
+        r <- paxos inst $ followBasicPaxosBallot p s
+        leave rv
+        return r)
   (\e -> do
     traceIO $ "follower error: " ++ show (e :: SomeException)
     return Nothing)
 
-runLeader1Ballot :: (Decreeable d) =>  Endpoint -> Instance d -> MemberNames -> Decree d -> IO (Maybe (Decree d))
-runLeader1Ballot endpoint inst memberNames decree = catch (do
+runLeader1Ballot :: (Decreeable d) => Rendezvous -> Endpoint -> Instance d -> MemberNames -> Decree d -> IO (Maybe (Decree d))
+runLeader1Ballot rv endpoint inst memberNames decree = catch (do
     let name = memberName inst memberNames
     let p = protocol defaultTimeouts endpoint memberNames name
     s <- storage
-    paxos inst $ leadBasicPaxosBallot p s decree)
+    meet rv
+    r <- paxos inst $ leadBasicPaxosBallot p s decree
+    leave rv
+    return r)
   (\e -> do
     traceIO $ "leader error: "  ++ show (e :: SomeException)
     return Nothing)
@@ -105,3 +114,26 @@ timeBound delay action = do
 
 maxTestRun :: Int
 maxTestRun = 5000 * 1000 -- 5 sec
+
+data Rendezvous = Rendezvous {
+  meet :: IO (),
+  leave :: IO ()
+}
+
+rendezvous :: Integer -> IO Rendezvous
+rendezvous count = atomically $ do
+  m <- newTVar count
+  l <- newTVar count
+  return Rendezvous {
+    meet = join m,
+    leave = join l
+  }
+
+join :: TVar Integer -> IO ()
+join rv = do
+  atomically $ modifyTVar rv $ \count -> count - 1
+  atomically $ do
+    count <- readTVar rv
+    if count > 0
+      then retry
+      else return ()
