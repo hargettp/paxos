@@ -142,7 +142,6 @@ proposition p d = do
     return (members,proposal,proposed)
   votes <- propose p members proposal
   safely $ do
-    -- maxBallotNumber votes >>= setNextProposedBallotNumber
     ledger <- get
     let success = isMajority (paxosMembers ledger) votes $ \vote ->
           case vote of
